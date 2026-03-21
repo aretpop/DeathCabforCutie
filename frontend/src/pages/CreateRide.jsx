@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
+import DriverDashboard from '../components/DriverDashboard'
 
 // Fix default leaf icon issues
 delete L.Icon.Default.prototype._getIconUrl
@@ -40,6 +41,29 @@ export default function CreateRide() {
   const [activeSelect, setActiveSelect] = useState('pickup')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  
+  const [availableDrivers, setAvailableDrivers] = useState([])
+  const [selectedDriver, setSelectedDriver] = useState('')
+  
+  // External Driver States
+  const [externalDriverName, setExternalDriverName] = useState('')
+  const [externalDriverMobile, setExternalDriverMobile] = useState('')
+  const [externalDriverVehicle, setExternalDriverVehicle] = useState('')
+  const [externalDriverType, setExternalDriverType] = useState('Auto')
+
+  useEffect(() => {
+    fetchDrivers()
+    const subscription = supabase.channel('public:available_drivers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => {
+        fetchDrivers()
+      }).subscribe()
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const fetchDrivers = async () => {
+    const { data } = await supabase.from('drivers').select('*').eq('status', 'Available').order('name')
+    setAvailableDrivers(data || [])
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -66,27 +90,52 @@ export default function CreateRide() {
       return
     }
 
+    if (!selectedDriver) {
+      setError("Please select an available driver or add an 'Other Driver' before publishing the ride.")
+      return
+    }
+
+    let p_driver_id = null
+    let p_external_driver = null
+    
+    if (selectedDriver === 'external') {
+      if (!externalDriverName.trim() || !externalDriverMobile.trim() || !externalDriverVehicle.trim()) {
+        setError("Please fill in all External Driver details.")
+        return
+      }
+      p_external_driver = {
+        name: externalDriverName.trim(),
+        mobile_number: externalDriverMobile.trim(),
+        vehicle_number: externalDriverVehicle.trim(),
+        vehicle_type: externalDriverType
+      }
+    } else {
+      p_driver_id = selectedDriver
+    }
+
     try {
       setLoading(true)
       setError(null)
       
-      const { data, error: insertError } = await supabase.from('rides').insert([{
-        creator_id: user.id,
-        pickup_location_name: pickupName,
-        pickup_lat: positions.pickup.lat,
-        pickup_lng: positions.pickup.lng,
-        destination_name: destName,
-        destination_lat: positions.destination.lat,
-        destination_lng: positions.destination.lng,
-        departure_time: new Date(departureTime).toISOString(),
-        max_occupancy: parseInt(occupancy),
-        available_seats: parseInt(occupancy),
-        status: 'active'
-      }]).select().single()
+      const { data: rideId, error: rpcError } = await supabase.rpc('create_ride_with_driver', {
+        p_creator_id: user.id,
+        p_pickup_location_name: pickupName,
+        p_pickup_lat: positions.pickup.lat,
+        p_pickup_lng: positions.pickup.lng,
+        p_destination_name: destName,
+        p_destination_lat: positions.destination.lat,
+        p_destination_lng: positions.destination.lng,
+        p_departure_time: new Date(departureTime).toISOString(),
+        p_max_occupancy: parseInt(occupancy),
+        p_driver_id: p_driver_id,
+        p_external_driver: p_external_driver
+      })
 
-      if (insertError) throw insertError
+      if (rpcError) throw rpcError
 
-      navigate(`/ride/${data.id}`)
+      // The RPC returns the new ride's UUID directly when properly set up.
+      // However, sometimes RPCs return slightly differently depending on setup. Let's redirect.
+      navigate(`/ride/${rideId}`)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -99,6 +148,8 @@ export default function CreateRide() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2>Publish Rickshaw Ride</h2>
       </div>
+
+      <DriverDashboard />
 
       {!user?.profile_completed && (
         <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>
@@ -157,6 +208,52 @@ export default function CreateRide() {
               value={occupancy} 
               onChange={e => setOccupancy(e.target.value)} 
             />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Assign Driver</label>
+            <select 
+              required
+              className="input-field"
+              value={selectedDriver}
+              onChange={e => setSelectedDriver(e.target.value)}
+            >
+              <option value="" disabled>Select an available driver...</option>
+              {availableDrivers.map(d => (
+                <option key={d.id} value={d.id}>{d.name} - {d.vehicle_number} ({d.vehicle_type})</option>
+              ))}
+              <option value="external">➕ Other Driver (Not Registered)</option>
+            </select>
+            {availableDrivers.length === 0 && selectedDriver !== 'external' && (
+              <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.5rem' }}>No registered drivers are currently available. You can add an 'Other Driver'.</p>
+            )}
+
+            {selectedDriver === 'external' && (
+              <div style={{ marginTop: '1rem', padding: '1rem', border: '1px dashed var(--border)', borderRadius: '8px', background: 'rgba(255,255,255,0.02)' }}>
+                <h4 style={{ marginBottom: '1rem' }}>External Driver Details</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.8rem' }}>Driver Name</label>
+                    <input type="text" className="input-field" value={externalDriverName} onChange={e => setExternalDriverName(e.target.value)} placeholder="Name" required />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.8rem' }}>Mobile Number</label>
+                    <input type="text" className="input-field" value={externalDriverMobile} onChange={e => setExternalDriverMobile(e.target.value)} placeholder="Mobile" required />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.8rem' }}>Vehicle Number</label>
+                    <input type="text" className="input-field" value={externalDriverVehicle} onChange={e => setExternalDriverVehicle(e.target.value)} placeholder="Vehicle Number" required />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.8rem' }}>Vehicle Type</label>
+                    <select className="input-field" value={externalDriverType} onChange={e => setExternalDriverType(e.target.value)}>
+                      <option value="Auto">Auto Rickshaw</option>
+                      <option value="Cab">Cab</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <button type="submit" className="btn" disabled={loading} style={{ marginTop: '1rem' }}>

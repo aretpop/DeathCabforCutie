@@ -66,7 +66,7 @@ export default function RideDetails() {
     try {
       const { data: rideData, error: rErr } = await supabase
         .from('rides')
-        .select(`*, users!creator_id(name, email, avatar_url, rating)`)
+        .select(`*, users!creator_id(name, email, avatar_url, rating), drivers(*)`)
         .eq('id', id).single()
       if (rErr) throw rErr
       setRide(rideData)
@@ -198,8 +198,26 @@ export default function RideDetails() {
               <div><strong>Approx Distance:</strong> {dist.toFixed(2)} km</div>
               <div><strong>Departure:</strong> {new Date(ride.departure_time).toLocaleString()}</div>
               <div><strong>Seats:</strong> {ride.available_seats} / {ride.max_occupancy}</div>
+              {ride.external_driver && (
+                <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--text)', marginBottom: '0.25rem' }}>
+                    <strong>Assigned Driver:</strong> 
+                    <span style={{ padding: '0.1rem 0.4rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', fontSize: '0.75rem', borderRadius: '4px', marginLeft: '6px', verticalAlign: 'middle', fontWeight: 'bold' }}>EXTERNAL</span>
+                  </div>
+                  <div><strong>Name:</strong> {ride.external_driver.name}</div>
+                  <div><strong>Vehicle:</strong> {ride.external_driver.vehicle_number} ({ride.external_driver.vehicle_type})</div>
+                  <div><strong>Contact:</strong> 📞 {ride.external_driver.mobile_number}</div>
+                </div>
+              )}
+              {ride.drivers && !ride.external_driver && (
+                <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--text)', marginBottom: '0.25rem' }}><strong>Assigned Driver:</strong> {ride.drivers.name}</div>
+                  <div><strong>Vehicle:</strong> {ride.drivers.vehicle_number} ({ride.drivers.vehicle_type})</div>
+                  <div><strong>Contact:</strong> 📞 {ride.drivers.mobile_number}</div>
+                </div>
+              )}
               {!isCancelled && (
-                 <div><strong>Status:</strong> <span style={{ textTransform: 'uppercase', color: isCompleted ? '#22c55e' : 'var(--primary)', fontWeight: 'bold' }}>{ride.status}</span></div>
+                 <div style={{ marginTop: '0.5rem' }}><strong>Status:</strong> <span style={{ textTransform: 'uppercase', color: isCompleted ? '#22c55e' : 'var(--primary)', fontWeight: 'bold' }}>{ride.status}</span></div>
               )}
             </div>
 

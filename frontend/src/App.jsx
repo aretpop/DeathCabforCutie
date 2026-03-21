@@ -11,6 +11,7 @@ import RideDetails from './pages/RideDetails'
 import ProfilePage from './pages/ProfilePage'
 import ProfilePublic from './pages/ProfilePublic'
 import PendingReviews from './pages/PendingReviews'
+import AdminDrivers from './pages/AdminDrivers'
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth()
@@ -34,6 +35,7 @@ function AppRoutes() {
         <Route path="/pending-reviews" element={<ProtectedRoute><PendingReviews /></ProtectedRoute>} />
         <Route path="/profile/settings" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/profile/:id" element={<ProtectedRoute><ProfilePublic /></ProtectedRoute>} />
+        <Route path="/admin/drivers" element={<ProtectedRoute><AdminDrivers /></ProtectedRoute>} />
       </Routes>
     </div>
   )
