@@ -15,8 +15,8 @@ export default function AdminDrivers() {
   useEffect(() => {
     fetchDrivers()
     
-    const subscription = supabase.channel('public:drivers')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => {
+    const subscription = supabase.channel('public:registered_vehicles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'registered_vehicles' }, () => {
         fetchDrivers()
       })
       .subscribe()
@@ -28,7 +28,7 @@ export default function AdminDrivers() {
     try {
       setLoading(true)
       const { data, error: err } = await supabase
-        .from('drivers')
+        .from('registered_vehicles')
         .select('*')
         .order('created_at', { ascending: false })
       
@@ -47,7 +47,7 @@ export default function AdminDrivers() {
     setError(null)
     
     try {
-      const { error: insertError } = await supabase.from('drivers').insert([{
+      const { error: insertError } = await supabase.from('registered_vehicles').insert([{
         name,
         mobile_number: mobileNumber,
         vehicle_number: vehicleNumber,
@@ -71,7 +71,7 @@ export default function AdminDrivers() {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this driver?")) return
     try {
-      const { error: delError } = await supabase.from('drivers').delete().eq('id', id)
+      const { error: delError } = await supabase.from('registered_vehicles').delete().eq('id', id)
       if (delError) throw delError
     } catch (err) {
       alert("Failed to delete. " + err.message)
@@ -81,7 +81,7 @@ export default function AdminDrivers() {
   const handleStatusToggle = async (driver) => {
     const newStatus = driver.status === 'Available' ? 'Reserved' : 'Available'
     try {
-      const { error: updErr } = await supabase.from('drivers').update({ status: newStatus }).eq('id', driver.id)
+      const { error: updErr } = await supabase.from('registered_vehicles').update({ status: newStatus }).eq('id', driver.id)
       if (updErr) throw updErr
     } catch (err) {
       alert("Failed to toggle status. " + err.message)
@@ -91,11 +91,11 @@ export default function AdminDrivers() {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>Driver Management (Admin)</h2>
+        <h2>Registered Vehicles (Admin)</h2>
       </div>
 
       <div className="glass-card" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ marginBottom: '1rem' }}>Register New Driver</h3>
+        <h3 style={{ marginBottom: '1rem' }}>Register New Vehicle / Driver</h3>
         {error && <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>{error}</div>}
         
         <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -125,7 +125,7 @@ export default function AdminDrivers() {
       </div>
 
       <div className="glass-card">
-        <h3 style={{ marginBottom: '1rem' }}>Registered Drivers</h3>
+        <h3 style={{ marginBottom: '1rem' }}>Registered Vehicles</h3>
         {loading ? <p>Loading drivers...</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>

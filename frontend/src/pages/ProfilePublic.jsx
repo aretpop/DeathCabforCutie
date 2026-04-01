@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
-import { Star, MapPin, Clock, Users, User as UserIcon, Calendar, Settings } from 'lucide-react'
+import { Star, MapPin, Clock, Users, User as UserIcon, Calendar, Settings, IndianRupee } from 'lucide-react'
 import ReviewList from '../components/ReviewList'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -133,6 +133,18 @@ export default function ProfilePublic() {
                       {ride.available_seats} / {ride.max_occupancy}
                     </div>
                   </div>
+
+                  {ride.total_price > 0 && (() => {
+                    const joined = ride.max_occupancy - ride.available_seats
+                    const occupants = joined + 1
+                    const perPerson = (ride.total_price / Math.max(1, occupants)).toFixed(2)
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.6rem', background: 'rgba(99,102,241,0.12)', borderRadius: '6px', fontSize: '0.8rem' }}>
+                        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><IndianRupee size={12} /> Total: ₹{ride.total_price}</span>
+                        <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>₹{perPerson}/person</span>
+                      </div>
+                    )
+                  })()}
 
                   <Link to={`/ride/${ride.id}`} className="btn" style={{ width: '100%', marginTop: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
                     View Ride

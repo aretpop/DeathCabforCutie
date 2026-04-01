@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-export default function CancelRideButton({ rideId, currentUserId, onCancelled }) {
+export default function CancelRideButton({ rideId, currentUserId, driverId, onCancelled }) {
   const [loading, setLoading] = useState(false)
 
   const handleCancel = async () => {
@@ -11,6 +11,11 @@ export default function CancelRideButton({ rideId, currentUserId, onCancelled })
     try {
       // 1. Update ride status
       await supabase.from('rides').update({ status: 'cancelled' }).eq('id', rideId)
+
+      // 1.5. Free the assigned registered vehicle
+      if (driverId) {
+        await supabase.from('registered_vehicles').update({ status: 'Available' }).eq('id', driverId)
+      }
       
       // 2. Fetch approved passengers
       const { data: passengers } = await supabase

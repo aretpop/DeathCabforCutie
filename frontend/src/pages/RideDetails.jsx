@@ -5,12 +5,13 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { Check, X } from 'lucide-react'
+import { Check, X, IndianRupee } from 'lucide-react'
 import RideChat from '../components/RideChat'
 import ProfileCard from '../components/ProfileCard'
 import CancelRideButton from '../components/CancelRideButton'
 import LeaveRideButton from '../components/LeaveRideButton'
 import RideReviewPanel from '../components/RideReviewPanel'
+import NegotiationPanel from '../components/NegotiationPanel'
 
 // Fix default leaf icon issues
 delete L.Icon.Default.prototype._getIconUrl
@@ -36,6 +37,7 @@ export default function RideDetails() {
   const [ride, setRide] = useState(null)
   const [requests, setRequests] = useState([])
   const [myRequest, setMyRequest] = useState(null)
+  const [offers, setOffers] = useState([])
   const [loading, setLoading] = useState(true)
 
   // Review state
@@ -44,7 +46,21 @@ export default function RideDetails() {
 
   useEffect(() => {
     fetchRideData()
+  }, [id])
 
+  // Auto-expire unanswered pending rides if the departure time has passed naturally.
+  useEffect(() => {
+    if (ride && ride.status === 'pending_driver') {
+      if (new Date(ride.departure_time) < new Date()) {
+        supabase.from('rides')
+          .update({ status: 'cancelled' })
+          .eq('id', ride.id)
+          .then(() => fetchRideData())
+      }
+    }
+  }, [ride])
+
+  useEffect(() => {
     // Realtime subscriptions
     const rideSub = supabase.channel(`public:rides:id=eq.${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rides', filter: `id=eq.${id}` }, (payload) => {
@@ -56,9 +72,15 @@ export default function RideDetails() {
         fetchRequests()
       }).subscribe()
 
+    const offersSub = supabase.channel(`public:ride_offers:ride_id=eq.${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ride_offers', filter: `ride_id=eq.${id}` }, () => {
+        fetchOffers()
+      }).subscribe()
+
     return () => {
       rideSub.unsubscribe()
       reqSub.unsubscribe()
+      offersSub.unsubscribe()
     }
   }, [id, user])
 
@@ -66,12 +88,12 @@ export default function RideDetails() {
     try {
       const { data: rideData, error: rErr } = await supabase
         .from('rides')
-        .select(`*, users!creator_id(name, email, avatar_url, rating), drivers(*)`)
+        .select(`*, users!creator_id(name, email, avatar_url, rating), registered_vehicles:driver_id(*)`)
         .eq('id', id).single()
       if (rErr) throw rErr
       setRide(rideData)
 
-      await Promise.all([fetchRequests(), checkExistingReview()])
+      await Promise.all([fetchRequests(), checkExistingReview(), fetchOffers()])
     } catch (err) {
       console.error(err)
     } finally {
@@ -103,6 +125,22 @@ export default function RideDetails() {
     setMyRequest(mine || null)
   }
 
+  const fetchOffers = async () => {
+    const { data } = await supabase
+      .from('ride_offers')
+      .select(`*, users!fk_ride_offers_driver_user(name, rating, avatar_url)`)
+      .eq('ride_id', id)
+      .not('status', 'in', '("rejected_by_student", "rejected_system")')
+    
+    const sorted = (data || []).sort((a, b) => {
+      if (a.current_price !== b.current_price) return a.current_price - b.current_price
+      const aRating = a.users?.rating || 0
+      const bRating = b.users?.rating || 0
+      return bRating - aRating
+    })
+    setOffers(sorted)
+  }
+
   const handleJoinRequest = async () => {
     if (!user) return navigate('/login')
     if (!user.profile_completed) return alert("Please complete your profile first.")
@@ -127,6 +165,11 @@ export default function RideDetails() {
   const handleCompleteRide = async () => {
     // Check if there are any approved passengers
     const approvedCount = requests.filter(r => r.status === 'approved').length
+
+    // Free the registered vehicle driver so it can be re-assigned
+    if (ride.driver_id) {
+      await supabase.from('registered_vehicles').update({ status: 'Available' }).eq('id', ride.driver_id)
+    }
     
     if (approvedCount === 0) {
       // If no passengers, jump straight to completed
@@ -145,11 +188,19 @@ export default function RideDetails() {
 
   const isCreator = user?.id === ride.creator_id
   const isApproved = myRequest?.status === 'approved'
-  
+
+  // Status flags
+  const NEGOTIATION_STATUSES = ['pending_driver', 'negotiating', 'price_proposed']
+  const isNegotiating = NEGOTIATION_STATUSES.includes(ride.status)
+  const isPublished = ride.status === 'published'
+  const isActive = ride.status === 'active'
   const isCompleted = ride.status === 'completed'
   const isAwaiting = ride.status === 'awaiting_reviews'
   const isCancelled = ride.status === 'cancelled'
-  const canChat = (isCreator || isApproved) && !isCancelled
+  const isRejected = ride.status === 'rejected'
+  // Can show passenger interaction only when ride is active/published/completed
+  const isLiveRide = isPublished || isActive
+  const canChat = (isCreator || isApproved) && !isCancelled && !isNegotiating
 
   const pickupPos = [ride.pickup_lat, ride.pickup_lng]
   const destPos = [ride.destination_lat, ride.destination_lng]
@@ -191,6 +242,16 @@ export default function RideDetails() {
                 RIDE CANCELLED
               </div>
             )}
+            {isRejected && (
+              <div style={{ display: 'inline-block', background: '#ef4444', color: 'white', padding: '0.25rem 0.75rem', borderRadius: '16px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+                NEGOTIATION REJECTED
+              </div>
+            )}
+            {isNegotiating && (
+              <div style={{ display: 'inline-block', background: '#f59e0b', color: 'white', padding: '0.25rem 0.75rem', borderRadius: '16px', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+                ⏳ AWAITING DRIVER
+              </div>
+            )}
 
             <div style={{ margin: '1rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--text-muted)' }}>
               <div><strong>Pickup:</strong> {ride.pickup_location_name}</div>
@@ -198,6 +259,35 @@ export default function RideDetails() {
               <div><strong>Approx Distance:</strong> {dist.toFixed(2)} km</div>
               <div><strong>Departure:</strong> {new Date(ride.departure_time).toLocaleString()}</div>
               <div><strong>Seats:</strong> {ride.available_seats} / {ride.max_occupancy}</div>
+              {ride.total_price > 0 && (() => {
+                // Occupants = approved passengers + creator (1)
+                const joined = ride.max_occupancy - ride.available_seats
+                const occupants = joined + 1 // +1 for the publisher
+                const perPerson = (ride.total_price / Math.max(1, occupants)).toFixed(2)
+                const isLocked = isCompleted || isAwaiting || isCancelled
+                return (
+                  <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '10px', border: '1px solid rgba(99, 102, 241, 0.25)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 'bold', marginBottom: '0.5rem', color: 'var(--primary)' }}>
+                      <IndianRupee size={15} /> Fare Split
+                      {isLocked && <span style={{ fontSize: '0.7rem', background: 'rgba(115,115,115,0.2)', color: 'var(--text-muted)', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: 'auto' }}>LOCKED</span>}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', textAlign: 'center' }}>
+                      <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '6px', padding: '0.4rem' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total</div>
+                        <div style={{ fontWeight: 'bold', color: 'var(--text)' }}>₹{ride.total_price}</div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '6px', padding: '0.4rem' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Riders</div>
+                        <div style={{ fontWeight: 'bold', color: 'var(--text)' }}>{occupants}</div>
+                      </div>
+                      <div style={{ background: 'rgba(99,102,241,0.25)', borderRadius: '6px', padding: '0.4rem' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Per Person</div>
+                        <div style={{ fontWeight: 'bold', color: 'var(--primary)' }}>₹{perPerson}</div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
               {ride.external_driver && (
                 <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
                   <div style={{ color: 'var(--text)', marginBottom: '0.25rem' }}>
@@ -209,11 +299,11 @@ export default function RideDetails() {
                   <div><strong>Contact:</strong> 📞 {ride.external_driver.mobile_number}</div>
                 </div>
               )}
-              {ride.drivers && !ride.external_driver && (
+              {ride.registered_vehicles && !ride.external_driver && (
                 <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
-                  <div style={{ color: 'var(--text)', marginBottom: '0.25rem' }}><strong>Assigned Driver:</strong> {ride.drivers.name}</div>
-                  <div><strong>Vehicle:</strong> {ride.drivers.vehicle_number} ({ride.drivers.vehicle_type})</div>
-                  <div><strong>Contact:</strong> 📞 {ride.drivers.mobile_number}</div>
+                  <div style={{ color: 'var(--text)', marginBottom: '0.25rem' }}><strong>Assigned Driver:</strong> {ride.registered_vehicles.name}</div>
+                  <div><strong>Vehicle:</strong> {ride.registered_vehicles.vehicle_number} ({ride.registered_vehicles.vehicle_type})</div>
+                  <div><strong>Contact:</strong> 📞 {ride.registered_vehicles.mobile_number}</div>
                 </div>
               )}
               {!isCancelled && (
@@ -221,7 +311,7 @@ export default function RideDetails() {
               )}
             </div>
 
-            {!isCreator && !isCompleted && !isCancelled && !isAwaiting && (
+            {!isCreator && !isCompleted && !isCancelled && !isAwaiting && !isNegotiating && isLiveRide && (
               <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
                 {!myRequest ? (
                   <button className="btn" onClick={handleJoinRequest} disabled={ride.available_seats === 0 || !user?.profile_completed}>
@@ -245,14 +335,17 @@ export default function RideDetails() {
               </div>
             )}
 
-            {isCreator && !isCompleted && !isCancelled && !isAwaiting && (
+            {isCreator && !isCompleted && !isCancelled && !isAwaiting && (isLiveRide || ride.status === 'pending_driver') && (
               <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-                <button className="btn" style={{ background: '#22c55e', flex: 1 }} onClick={handleCompleteRide}>
-                  Mark Completed
-                </button>
+                {isLiveRide && (
+                  <button className="btn" style={{ background: '#22c55e', flex: 1 }} onClick={handleCompleteRide}>
+                    Mark Completed
+                  </button>
+                )}
                 <CancelRideButton 
                   rideId={id} 
                   currentUserId={user.id} 
+                  driverId={ride.driver_id}
                   onCancelled={() => { setRide({...ride, status: 'cancelled'}) }} 
                 />
               </div>
@@ -290,9 +383,42 @@ export default function RideDetails() {
 
       {/* Right Column: Interaction */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        
-        {/* Creator Control Panel */}
-        {isCreator && !isCancelled && (
+
+        {/* Negotiation Panels */}
+        {isNegotiating && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <h3 style={{ margin: 0 }}>{isCreator ? 'Driver Offers' : 'Your Offer'}</h3>
+            
+            {isCreator && offers.length === 0 && (
+              <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Waiting for drivers to submit offers...
+              </div>
+            )}
+            
+            {isCreator && offers.map((offer, index) => (
+              <NegotiationPanel
+                key={offer.id}
+                ride={ride}
+                offer={offer}
+                isBestOffer={index === 0 && offer.status !== 'rejected_by_driver'}
+                onRideUpdate={() => { fetchRideData() }}
+                isDriverView={false}
+              />
+            ))}
+
+            {!isCreator && user?.role === 'driver' && (
+              <NegotiationPanel
+                ride={ride}
+                offer={offers.find(o => o.driver_id === user.id) || null}
+                onRideUpdate={() => { fetchRideData() }}
+                isDriverView={true}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Creator Control Panel — shown only for live rides */}
+        {isCreator && !isCancelled && isLiveRide && (
           <div className="glass-card">
             <h3 style={{ marginBottom: '1rem' }}>Passenger Requests</h3>
             {requests.length === 0 ? (

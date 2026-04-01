@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { MapPin, Users, Clock, Star } from 'lucide-react'
+import { MapPin, Users, Clock, Star, IndianRupee } from 'lucide-react'
 import ProfileCard from '../components/ProfileCard'
 
 export default function Rides() {
@@ -30,7 +30,8 @@ export default function Rides() {
           *,
           users!creator_id(name, rating, avatar_url)
         `)
-        .eq('status', 'active')
+        .in('status', ['active', 'published'])
+        .gt('available_seats', 0)
         .gt('departure_time', new Date().toISOString())
         .order('departure_time', { ascending: true })
 
@@ -98,6 +99,24 @@ export default function Rides() {
                   {ride.available_seats} / {ride.max_occupancy} Seats
                 </div>
               </div>
+
+              {ride.total_price > 0 && (() => {
+                // occupants = passengers joined + publisher (1)
+                const joined = ride.max_occupancy - ride.available_seats
+                const occupants = joined + 1
+                const perPerson = (ride.total_price / Math.max(1, occupants)).toFixed(2)
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: 'rgba(99, 102, 241, 0.12)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)' }}>
+                      <IndianRupee size={13} />
+                      Total: <strong style={{ color: 'var(--text)' }}>₹{ride.total_price}</strong>
+                    </div>
+                    <div style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                      ₹{perPerson}/person
+                    </div>
+                  </div>
+                )
+              })()}
 
               <Link to={`/ride/${ride.id}`} className="btn" style={{ width: '100%', marginTop: '0.5rem', padding: '0.5rem' }}>
                 View & Join
