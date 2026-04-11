@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient'
 import { MessageCircle } from 'lucide-react'
 import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
+import '../chat.css'
 
 export default function RideChat({ rideId, currentUserId, canChat, isCompleted }) {
   const [messages, setMessages] = useState([])
@@ -74,30 +75,39 @@ export default function RideChat({ rideId, currentUserId, canChat, isCompleted }
   if (isCompleted) placeholder = "Chat closed"
 
   return (
-    <div className="glass-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', maxHeight: '600px', padding: 0, overflow: 'hidden' }}>
+    <div className="chat-container">
       
-      <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-          <MessageCircle size={20} color="var(--primary)" /> Ride Chat
-        </h3>
+      <div className="chat-title">
+        <h1>Ride Chat</h1>
+        <h2>Coordination</h2>
+        <figure className="avatar">
+          <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=Ride${rideId}`} alt="Avatar" />
+        </figure>
       </div>
       
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        {!canChat ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: '2rem' }}>
-            <MessageCircle size={32} style={{ opacity: 0.3, marginBottom: '1rem' }} />
-            <div>Chat is only available for approved<br/>passengers and the ride creator.</div>
-          </div>
-        ) : loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading messages...</div>
-        ) : messages.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Say hello! Start coordinating your ride.</div>
-        ) : (
-          messages.map(msg => (
-            <ChatMessage key={msg.id} message={msg} isMe={msg.sender_id === currentUserId} />
-          ))
-        )}
-        <div ref={messagesEndRef} />
+      <div className="messages">
+        <div className="messages-content">
+          {!canChat ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <MessageCircle size={32} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+              <div>Chat is only available for approved<br/>passengers and the ride creator.</div>
+            </div>
+          ) : loading ? (
+            <div className="message loading new">
+              <figure className="avatar">
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=Loading`} alt="Loading" />
+              </figure>
+              <span></span>
+            </div>
+          ) : messages.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: '2rem' }}>Say hello! Start coordinating your ride.</div>
+          ) : (
+            messages.map(msg => (
+              <ChatMessage key={msg.id} message={msg} isMe={msg.sender_id === currentUserId} />
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       <ChatInput 

@@ -29,6 +29,7 @@ export default function Navbar() {
               <Link to="/profile/settings" style={{ color: 'var(--text-muted)' }} title="Please complete your profile first">Publish Ride (Locked)</Link>
             )}
             <Link to="/pending-reviews">Pending Reviews</Link>
+            <Link to="/history">History</Link>
             <Link to={`/profile/${user?.id || ''}`}>Profile</Link>
           </>
         )}

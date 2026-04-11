@@ -13,6 +13,7 @@ import RideDetails from './pages/RideDetails'
 import ProfilePage from './pages/ProfilePage'
 import ProfilePublic from './pages/ProfilePublic'
 import PendingReviews from './pages/PendingReviews'
+import RideHistory from './pages/RideHistory'
 import AdminDrivers from './pages/AdminDrivers'
 import DriverDashboardPage from './pages/DriverDashboardPage'
 
@@ -77,6 +78,7 @@ function AppRoutes() {
         <Route path="/create" element={<StudentRoute><CreateRide /></StudentRoute>} />
         <Route path="/ride/:id" element={<ProtectedRoute><RideDetails /></ProtectedRoute>} />
         <Route path="/pending-reviews" element={<StudentRoute><PendingReviews /></StudentRoute>} />
+        <Route path="/history" element={<StudentRoute><RideHistory /></StudentRoute>} />
         <Route path="/profile/settings" element={<StudentRoute><ProfilePage /></StudentRoute>} />
         <Route path="/profile/:id" element={<ProtectedRoute><ProfilePublic /></ProtectedRoute>} />
         <Route path="/admin/drivers" element={<AdminRoute><AdminDrivers /></AdminRoute>} />

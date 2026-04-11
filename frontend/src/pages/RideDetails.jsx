@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Polyline, GeoJSON, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { Check, X, IndianRupee } from 'lucide-react'
+import { Check, X, IndianRupee, Navigation } from 'lucide-react'
 import RideChat from '../components/RideChat'
 import ProfileCard from '../components/ProfileCard'
 import CancelRideButton from '../components/CancelRideButton'
 import LeaveRideButton from '../components/LeaveRideButton'
 import RideReviewPanel from '../components/RideReviewPanel'
 import NegotiationPanel from '../components/NegotiationPanel'
+import { getRoute, openNavigation } from '../utils/geoUtils'
 
 // Fix default leaf icon issues
 delete L.Icon.Default.prototype._getIconUrl
@@ -20,6 +21,20 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
+
+const pickupIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+const destIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
 
 const FitBounds = ({ bounds }) => {
   const map = useMap()
@@ -39,6 +54,7 @@ export default function RideDetails() {
   const [myRequest, setMyRequest] = useState(null)
   const [offers, setOffers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [routeGeometry, setRouteGeometry] = useState(null)
 
   // Review state
   const [showReview, setShowReview] = useState(false)
@@ -58,13 +74,22 @@ export default function RideDetails() {
           .then(() => fetchRideData())
       }
     }
+    
+    // Fetch route geometry for the map
+    if (ride) {
+      getRoute({ lat: ride.pickup_lat, lng: ride.pickup_lng }, { lat: ride.destination_lat, lng: ride.destination_lng })
+        .then(data => {
+          if (data.geometry) setRouteGeometry(data.geometry)
+        })
+        .catch(err => console.error("Could not fetch route for details map", err))
+    }
   }, [ride])
 
   useEffect(() => {
     // Realtime subscriptions
     const rideSub = supabase.channel(`public:rides:id=eq.${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rides', filter: `id=eq.${id}` }, (payload) => {
-        setRide(payload.new)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rides', filter: `id=eq.${id}` }, () => {
+        fetchRideData()
       }).subscribe()
 
     const reqSub = supabase.channel(`public:ride_requests:ride_id=eq.${id}`)
@@ -88,7 +113,7 @@ export default function RideDetails() {
     try {
       const { data: rideData, error: rErr } = await supabase
         .from('rides')
-        .select(`*, users!creator_id(name, email, avatar_url, rating), registered_vehicles:driver_id(*)`)
+        .select(`*, users!creator_id(name, email, avatar_url, rating), registered_vehicles:driver_id(*), drivers:assigned_driver_id(id, name, average_rating)`)
         .eq('id', id).single()
       if (rErr) throw rErr
       setRide(rideData)
@@ -210,17 +235,30 @@ export default function RideDetails() {
   const dist = L.latLng(pickupPos).distanceTo(L.latLng(destPos)) / 1000 // km
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 350px', gap: '2rem' }}>
+    <div className="responsive-grid" style={{ maxWidth: '1000px', margin: '0 auto' }}>
       {/* Left Column: Map & Details */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
         
         <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
-          <div style={{ height: '350px', width: '100%' }}>
+          <div style={{ height: '350px', width: '100%', borderRadius: '12px 12px 0 0', overflow: 'hidden' }}>
             <MapContainer bounds={bounds} style={{ height: '100%', width: '100%', zIndex: 1 }}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Marker position={pickupPos} />
-              <Marker position={destPos} />
-              <Polyline positions={[pickupPos, destPos]} color="var(--primary)" weight={4} dashArray="10, 10" />
+              <TileLayer 
+                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" 
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; CartoDB'
+              />
+              <Marker position={pickupPos} icon={pickupIcon} />
+              <Marker position={destPos} icon={destIcon} />
+              
+              {routeGeometry ? (
+                <GeoJSON 
+                  key={pickupPos.join(',') + destPos.join(',')} 
+                  data={routeGeometry} 
+                  style={{ color: "var(--primary, #3b82f6)", weight: 4, opacity: 0.8, lineJoin: 'round' }} 
+                />
+              ) : (
+                <Polyline positions={[pickupPos, destPos]} color="var(--primary)" weight={4} dashArray="10, 10" />
+              )}
+              
               <FitBounds bounds={bounds} />
             </MapContainer>
           </div>
@@ -254,7 +292,26 @@ export default function RideDetails() {
             )}
 
             <div style={{ margin: '1rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--text-muted)' }}>
-              <div><strong>Pickup:</strong> {ride.pickup_location_name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div><strong>Pickup:</strong> {ride.pickup_location_name}</div>
+                <button
+                  onClick={() => openNavigation(ride.pickup_lat, ride.pickup_lng)}
+                  disabled={!ride.pickup_lat || !ride.pickup_lng}
+                  title="Navigate to pickup location"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.3rem',
+                    background: 'var(--primary, #3b82f6)', color: 'white',
+                    border: 'none', borderRadius: '6px', padding: '0.3rem 0.6rem',
+                    fontSize: '0.8rem', cursor: 'pointer',
+                    opacity: (!ride.pickup_lat || !ride.pickup_lng) ? 0.5 : 1,
+                    transition: 'opacity 0.2s'
+                  }}
+                  onMouseEnter={(e) => { if (ride.pickup_lat) e.currentTarget.style.opacity = 0.9; }}
+                  onMouseLeave={(e) => { if (ride.pickup_lat) e.currentTarget.style.opacity = 1; }}
+                >
+                  <Navigation size={14} /> Navigate
+                </button>
+              </div>
               <div><strong>Destination:</strong> {ride.destination_name}</div>
               <div><strong>Approx Distance:</strong> {dist.toFixed(2)} km</div>
               <div><strong>Departure:</strong> {new Date(ride.departure_time).toLocaleString()}</div>
@@ -307,7 +364,9 @@ export default function RideDetails() {
                 </div>
               )}
               {!isCancelled && (
-                 <div style={{ marginTop: '0.5rem' }}><strong>Status:</strong> <span style={{ textTransform: 'uppercase', color: isCompleted ? '#22c55e' : 'var(--primary)', fontWeight: 'bold' }}>{ride.status}</span></div>
+                 <div style={{ marginTop: '0.5rem' }}><strong>Status:</strong> <span style={{ textTransform: 'uppercase', color: (isCompleted || (isAwaiting && hasReviewed)) ? '#22c55e' : 'var(--primary)', fontWeight: 'bold' }}>
+                   {(isAwaiting && hasReviewed) ? 'completed' : ride.status.replace('_', ' ')}
+                 </span></div>
               )}
             </div>
 
@@ -318,7 +377,11 @@ export default function RideDetails() {
                     {ride.available_seats === 0 ? 'Full' : 'Request to Join'}
                   </button>
                 ) : (
-                  <div className="btn" style={{ background: myRequest.status === 'approved' ? '#22c55e' : myRequest.status === 'rejected' ? '#ef4444' : 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <div className="btn" style={{ 
+                    background: myRequest.status === 'approved' ? '#22c55e' : myRequest.status === 'rejected' ? '#ef4444' : 'var(--bg-card)', 
+                    border: '1px solid var(--border)',
+                    color: myRequest.status === 'pending' ? 'var(--text-main)' : 'white'
+                  }}>
                     Status: <strong style={{ marginLeft: '4px', textTransform: 'capitalize' }}>{myRequest.status}</strong>
                   </div>
                 )}
@@ -351,25 +414,19 @@ export default function RideDetails() {
               </div>
             )}
             
-            {(isAwaiting && !showReview && !hasReviewed && (isCreator || isApproved)) && (
+            {( (isAwaiting || isCompleted) && !showReview && (isCreator || isApproved)) && (
                <button className="btn" onClick={() => setShowReview(true)} style={{ marginTop: '1rem', width: '100%', background: 'var(--primary)' }}>
-                 {isCreator ? 'Review Passengers' : 'Submit Ride Review'}
+                 ⭐ Leave a Review
                </button>
             )}
             
-            {(hasReviewed && isAwaiting) && (
+            {(hasReviewed && (isAwaiting || isCompleted) && !showReview) && (
                <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', borderRadius: '8px', textAlign: 'center' }}>
-                 Your review has been submitted. Waiting for others...
-               </div>
-            )}
-            
-            {(hasReviewed && isCompleted) && (
-               <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', borderRadius: '8px', textAlign: 'center' }}>
-                 Ride is Completed!
+                 You've submitted some or all reviews for this ride.
                </div>
             )}
 
-            {showReview && !hasReviewed && isAwaiting && (
+            {showReview && (isAwaiting || isCompleted) && (
               <RideReviewPanel 
                 ride={ride} 
                 currentUser={user} 

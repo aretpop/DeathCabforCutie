@@ -73,24 +73,35 @@ export default function NegotiationPanel({ ride, offer, isBestOffer = false, onR
   const driverRating = offer?.users?.rating
 
   const processAcceptance = async (acceptedOfferId, finalDriverId, finalPrice) => {
-    // 1. Update Ride
-    await supabase.from('rides').update({
-      status: 'published',
-      assigned_driver_id: finalDriverId,
-      final_price: finalPrice,
-      total_price: finalPrice
-    }).eq('id', ride.id)
+    // Delegate entirely to the atomic RPC which:
+    //   • Locks the ride row (prevents race conditions)
+    //   • Checks for time-overlap with driver's existing rides (+ 10-min buffer)
+    //   • Accepts the ride and rejects all other offers — all in one transaction
+    const { error: rpcError } = await supabase.rpc('accept_ride_offer', {
+      p_ride_id:           ride.id,
+      p_driver_id:         finalDriverId,
+      p_accepted_offer_id: acceptedOfferId ?? null,
+      p_final_price:       finalPrice
+    })
 
-    // 2. Mark this offer as accepted
-    if (acceptedOfferId) {
-      await supabase.from('ride_offers').update({ status: 'accepted' }).eq('id', acceptedOfferId)
+    if (rpcError) {
+      // The DB raises: RAISE EXCEPTION 'machine_code' USING DETAIL = 'human text'
+      // rpcError.message = machine code, rpcError.details = friendly message
+      const code = rpcError.message?.trim()
+
+      if (code === 'ride_overlap') {
+        throw new Error(
+          rpcError.details || 'You already have a ride scheduled during this time.'
+        )
+      }
+      if (code === 'ride_already_assigned') {
+        throw new Error(
+          rpcError.details || 'This ride was just taken by another driver. Please refresh.'
+        )
+      }
+      // Generic fallback — prefer details over raw message if available
+      throw new Error(rpcError.details || rpcError.message || 'Failed to accept ride. Please try again.')
     }
-
-    // 3. Reject all other remaining offers for this ride via System
-    await supabase.from('ride_offers')
-      .update({ status: 'rejected_system' })
-      .eq('ride_id', ride.id)
-      .neq('id', acceptedOfferId)
   }
 
   const upsertOffer = async (updates) => {
@@ -150,18 +161,23 @@ export default function NegotiationPanel({ ride, offer, isBestOffer = false, onR
   // ── STUDENT ACTIONS ──────────────────────────────────
   const studentAccept = async () => {
     setLoading(true)
+    setError(null)
     const isAvail = await checkDriverAvailability(offer.driver_id)
     if (!isAvail) { setLoading(false); return }
 
-    await processAcceptance(offer.id, offer.driver_id, currentPrice)
-    
-    await supabase.from('chat_messages').insert([{
-      ride_id: ride.id, sender_id: user?.id,
-      content: `✅ ${studentName} accepted ${driverName}'s offer of ₹${currentPrice}.`,
-      message_type: 'system'
-    }])
-    if (onRideUpdate) onRideUpdate()
-    setLoading(false)
+    try {
+      await processAcceptance(offer.id, offer.driver_id, currentPrice)
+      await supabase.from('chat_messages').insert([{
+        ride_id: ride.id, sender_id: user?.id,
+        content: `✅ ${studentName} accepted ${driverName}'s offer of ₹${currentPrice}.`,
+        message_type: 'system'
+      }])
+      if (onRideUpdate) onRideUpdate()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const studentReject = () => upsertOffer({
@@ -189,18 +205,23 @@ export default function NegotiationPanel({ ride, offer, isBestOffer = false, onR
   // ── DRIVER ACTIONS ────────────────────────────────────
   const driverAccept = async () => {
     setLoading(true)
+    setError(null)
     const isAvail = await checkDriverAvailability(user?.id)
     if (!isAvail) { setLoading(false); return }
 
-    await processAcceptance(offer?.id, user?.id, currentPrice)
-
-    await supabase.from('chat_messages').insert([{
-      ride_id: ride.id, sender_id: user?.id,
-      content: `✅ ${driverName} accepted ${studentName}'s offer of ₹${currentPrice}.`,
-      message_type: 'system'
-    }])
-    if (onRideUpdate) onRideUpdate()
-    setLoading(false)
+    try {
+      await processAcceptance(offer?.id, user?.id, currentPrice)
+      await supabase.from('chat_messages').insert([{
+        ride_id: ride.id, sender_id: user?.id,
+        content: `✅ ${driverName} accepted ${studentName}'s offer of ₹${currentPrice}.`,
+        message_type: 'system'
+      }])
+      if (onRideUpdate) onRideUpdate()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const driverReject = () => {
