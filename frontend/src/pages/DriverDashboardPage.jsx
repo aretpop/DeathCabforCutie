@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import DriverRideCard from '../components/DriverRideCard'
-import { Car, Bell, RefreshCw, CheckCircle, Power } from 'lucide-react'
+import { Car, Bell, RefreshCw, CheckCircle, Power, Star } from 'lucide-react'
+import { formatStarBreakdown, getDriverRatingBreakdown } from '../utils/reviewEngine'
 
 const TABS = [
   { id: 'new', label: 'New Requests', icon: Bell, statuses: ['pending_driver'] },
   { id: 'negotiating', label: 'Negotiations', icon: RefreshCw, statuses: ['negotiating', 'price_proposed'] },
   { id: 'accepted', label: 'Accepted Rides', icon: CheckCircle, statuses: ['published', 'active'] },
+  { id: 'reviews', label: 'My Reviews', icon: Star, statuses: [] },
 ]
 
 export default function DriverDashboardPage() {
@@ -16,119 +18,145 @@ export default function DriverDashboardPage() {
   const [rides, setRides] = useState([])
   const [loading, setLoading] = useState(true)
   const [driverStatus, setDriverStatus] = useState('available')
+  
+  // Review specific state
+  const [driverStats, setDriverStats] = useState(null)
+  const [myReviews, setMyReviews] = useState([])
 
-  useEffect(() => {
-    if (!user?.id) return
-    fetchRides()
-    fetchDriverStatus()
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  // legacyIdRef: resolved once (undefined = not yet fetched, null = no legacy ID)
+  const legacyIdRef = useRef(undefined)
+  // userRef: always points at the latest user so async callbacks don't go stale
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
 
-    // Realtime subscription for rides assigned to this driver natively or to their legacy ID
-    // Cannot easily map both inside the string filter, so we omit filter and check payload
-    let legacyId = null
-    
-    const resolveLegacyAndSub = async () => {
-      const mobile = user.phone || user.mobile_number
-      if (mobile) {
-        const raw = mobile.replace(/\\D/g, '')
-        const noCode = raw.startsWith('91') ? raw.slice(2) : raw
-        const res = await supabase.from('registered_vehicles').select('id').in('mobile_number', [`+91${noCode}`, noCode, mobile]).maybeSingle()
-        if (res.data) legacyId = res.data.id
-      }
-
-      const sub = supabase.channel(`driver-rides-merged-${user.id}`)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'rides'
-        }, (payload) => {
-          if (payload.new && (payload.new.assigned_driver_id === user.id || payload.new.driver_id === legacyId || payload.new.status === 'pending_driver')) {
-            fetchRides()
-          }
-        })
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'ride_offers',
-          filter: `driver_id=eq.${user.id}`
-        }, () => {
-          fetchRides()
-        })
-        .subscribe()
-      
-      return sub
-    }
-
-    let subInstance = null
-    resolveLegacyAndSub().then(sub => subInstance = sub)
-
-    return () => { if (subInstance) subInstance.unsubscribe() }
-  }, [user?.id])
-
-  const fetchRides = async () => {
-    if (!user?.id) return
+  // ── Core fetch (plain async fn, called from effects only) ────────────────
+  const doFetch = async (userId) => {
+    if (!userId) return
     setLoading(true)
 
-    // 1. Resolve their associated legacy ID if they were registered by an admin
-    let legacyId = null
-    const mobile = user.phone || user.mobile_number
-    if (mobile) {
-      const rawDigits = mobile.replace(/\\D/g, '')
-      const withoutCode = rawDigits.startsWith('91') ? rawDigits.slice(2) : rawDigits
-      const withCode = `+91${withoutCode}`
-
-      const { data: legacyDriver } = await supabase
-        .from('registered_vehicles')
-        .select('id')
-        .in('mobile_number', [withCode, withoutCode, mobile])
-        .maybeSingle()
-      
-      if (legacyDriver) legacyId = legacyDriver.id
+    // Resolve legacy vehicle ID once per session
+    if (legacyIdRef.current === undefined) {
+      const u = userRef.current
+      const mobile = u?.phone || u?.mobile_number
+      if (mobile) {
+        const digits = mobile.replace(/\D/g, '')
+        const noCode = digits.startsWith('91') ? digits.slice(2) : digits
+        const { data } = await supabase
+          .from('registered_vehicles')
+          .select('id')
+          .in('mobile_number', [`+91${noCode}`, noCode, mobile])
+          .maybeSingle()
+        legacyIdRef.current = data?.id ?? null
+      } else {
+        legacyIdRef.current = null
+      }
     }
 
-    // 2. Query rides for either user.id OR legacyId, PLUS any open marketplace rides
-    let queryArgs = `assigned_driver_id.eq.${user.id},status.eq.pending_driver`
-    if (legacyId) {
-      queryArgs += `,driver_id.eq.${legacyId}`
-    }
+    const legacyId = legacyIdRef.current
+    let queryArgs = `assigned_driver_id.eq.${userId},status.eq.pending_driver`
+    if (legacyId) queryArgs += `,driver_id.eq.${legacyId}`
 
-    const { data, error } = await supabase
-      .from('rides')
-      .select(`*, users!creator_id(name, avatar_url, rating)`)
-      .or(queryArgs)
-      .not('status', 'in', '("cancelled","completed","awaiting_reviews","rejected")')
-      .order('created_at', { ascending: false })
-
-    const { data: offersData } = await supabase
-      .from('ride_offers')
-      .select('*')
-      .eq('driver_id', user.id)
-    
-    const myOffers = offersData || []
+    const [{ data, error }, { data: offersData }, { data: reviewsData }, { data: driverData }] = await Promise.all([
+      supabase
+        .from('rides')
+        .select(`*, users!creator_id(name, avatar_url, rating)`)
+        .or(queryArgs)
+        .not('status', 'in', '("cancelled","completed","awaiting_reviews","rejected")')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('ride_offers')
+        .select('*')
+        .eq('driver_id', userId),
+      supabase
+        .from('ride_reviews')
+        .select('*, users!reviewer_id(name, avatar_url)')
+        .eq('driver_id', userId)
+        .eq('review_type', 'rider_to_driver')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('drivers')
+        .select('status, average_rating, total_reviews')
+        .eq('id', userId)
+        .single()
+    ])
 
     if (!error) {
-       // Overwrite local driver view perspective smoothly
-       const enhancedRides = (data || []).map(r => {
-         const myOffer = myOffers.find(o => o.ride_id === r.id)
-         let meta = r.status
-         if (myOffer && r.status === 'pending_driver') {
-           if (['pending_student', 'pending_driver'].includes(myOffer.status)) meta = 'negotiating'
-           if (['rejected_by_student', 'rejected_by_driver', 'rejected_system'].includes(myOffer.status)) meta = 'rejected'
-         }
-         return { ...r, driverMetaStatus: meta, offer: myOffer }
-       })
-       setRides(enhancedRides)
+      const myOffers = offersData || []
+      const enhanced = (data || []).map(r => {
+        const myOffer = myOffers.find(o => o.ride_id === r.id)
+        let meta = r.status
+        if (myOffer && r.status === 'pending_driver') {
+          if (['pending_student', 'pending_driver'].includes(myOffer.status)) meta = 'negotiating'
+          if (['rejected_by_student', 'rejected_by_driver', 'rejected_system'].includes(myOffer.status)) meta = 'rejected'
+        }
+        return { ...r, driverMetaStatus: meta, offer: myOffer }
+      })
+      setRides(enhanced)
     }
+
+    if (reviewsData) setMyReviews(reviewsData)
+    if (driverData) {
+      setDriverStatus(driverData.status)
+      setDriverStats({ average_rating: driverData.average_rating, total_reviews: driverData.total_reviews })
+    }
+
     setLoading(false)
   }
 
-  const fetchDriverStatus = async () => {
-    const { data } = await supabase
-      .from('drivers')
-      .select('status')
-      .eq('id', user.id)
-      .single()
-    if (data) setDriverStatus(data.status)
-  }
+  // ── Initial data load ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return
+    legacyIdRef.current = undefined  // reset cache when user changes
+
+    // Async IIFE keeps setState deferred (not synchronous in effect body)
+    ;(async () => {
+      await doFetch(user.id)
+    })()
+  }, [user?.id])
+
+  // ── Realtime subscription ─────────────────────────────────────────────────
+  // All callbacks use userRef / legacyIdRef so they're never stale closures.
+  useEffect(() => {
+    if (!user?.id) return
+    const userId = user.id
+
+    const channel = supabase
+      .channel(`driver-dashboard-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rides' },
+        (payload) => {
+          const checkMatch = (row) => row && (
+            row.status === 'pending_driver' ||
+            row.assigned_driver_id === userId ||
+            (legacyIdRef.current && row.driver_id === legacyIdRef.current)
+          );
+          
+          if (checkMatch(payload.old) || checkMatch(payload.new)) {
+            ;(async () => { await doFetch(userId) })()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ride_offers', filter: `driver_id=eq.${userId}` },
+        () => { ;(async () => { await doFetch(userId) })() }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ride_reviews', filter: `driver_id=eq.${userId}` },
+        () => { ;(async () => { await doFetch(userId) })() }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') ;(async () => { await doFetch(userId) })()
+      })
+
+    // Synchronous cleanup — no async gap where channel leaks can happen
+    return () => { supabase.removeChannel(channel) }
+  }, [user?.id])
+
+
 
   const toggleStatus = async () => {
     const newStatus = driverStatus === 'available' ? 'offline' : 'available'
@@ -155,14 +183,26 @@ export default function DriverDashboardPage() {
   const activeStatuses = TABS.find(t => t.id === activeTab)?.statuses || []
   const filteredRides = visibleRides.filter(r => activeStatuses.includes(r.driverMetaStatus))
 
-  const countFor = (tab) => visibleRides.filter(r => tab.statuses.includes(r.driverMetaStatus)).length
+  const countFor = (tab) => {
+    if (tab.id === 'reviews') return myReviews.length
+    return visibleRides.filter(r => tab.statuses.includes(r.driverMetaStatus)).length
+  }
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
-          <h2 style={{ margin: 0 }}>Driver Dashboard</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h2 style={{ margin: 0 }}>Driver Dashboard</h2>
+            {driverStats && driverStats.total_reviews > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(251,191,36,0.15)', color: '#f59e0b', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                <Star size={14} fill="currentColor" />
+                {driverStats.average_rating.toFixed(1)} 
+                <span style={{ fontSize: '0.75rem', opacity: 0.8, marginLeft: '0.2rem' }}>({driverStats.total_reviews})</span>
+              </div>
+            )}
+          </div>
           <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem', fontSize: '0.9rem' }}>
             Welcome back, {user?.name || 'Driver'}
           </p>
@@ -190,8 +230,8 @@ export default function DriverDashboardPage() {
       </div>
 
       {/* Stats Overview */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
-        {TABS.map(tab => {
+      <div className="responsive-grid-3" style={{ marginBottom: '2rem' }}>
+        {TABS.slice(0,3).map(tab => {
           const Icon = tab.icon
           const count = countFor(tab)
           return (
@@ -232,7 +272,7 @@ export default function DriverDashboardPage() {
             >
               <Icon size={15} />
               {tab.label}
-              {count > 0 && (
+              {count > 0 && tab.id !== 'reviews' && (
                 <span style={{
                   background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.15)',
                   color: isActive ? 'white' : 'var(--text-muted)',
@@ -251,11 +291,64 @@ export default function DriverDashboardPage() {
         })}
       </div>
 
-      {/* Ride Cards */}
+      {/* Ride Cards / Reviews Content */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          Loading rides...
+          Loading...
         </div>
+      ) : activeTab === 'reviews' ? (
+        myReviews.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }} className="glass-card">
+            <Star size={40} style={{ marginBottom: '1rem', opacity: 0.3 }} />
+            <p style={{ margin: 0 }}>You don't have any reviews yet.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {myReviews.map(review => (
+              <div key={review.id} className="glass-card" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <div style={{ fontWeight: '600', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                     {review.users?.avatar_url && (
+                        <img src={review.users.avatar_url} alt="Rider" style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
+                     )}
+                     {review.users?.name || 'Passenger'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Star key={s} size={14} fill={s <= review.rating ? '#fbbf24' : 'none'} color={s <= review.rating ? '#fbbf24' : 'var(--border)'} />
+                    ))}
+                  </div>
+                </div>
+                
+                {review.is_auto_generated && (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'inline-block', marginBottom: '0.5rem' }}>
+                    AUTO-PENALTY (CANCELLATION)
+                  </div>
+                )}
+
+                {review.tags && review.tags.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: review.comment ? '0.75rem' : '0' }}>
+                    {review.tags.map(tag => (
+                      <span key={tag} style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary)', padding: '0.15rem 0.5rem', borderRadius: '999px', fontSize: '0.75rem' }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                
+                {review.comment && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', marginTop: '0.5rem' }}>
+                    "{review.comment}"
+                  </div>
+                )}
+
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+                  {new Date(review.created_at).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : filteredRides.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }} className="glass-card">
           <Car size={40} style={{ marginBottom: '1rem', opacity: 0.3 }} />
@@ -271,7 +364,7 @@ export default function DriverDashboardPage() {
             <DriverRideCard
               key={ride.id}
               ride={ride}
-              onUpdate={fetchRides}
+              onUpdate={() => doFetch(user?.id)}
             />
           ))}
         </div>

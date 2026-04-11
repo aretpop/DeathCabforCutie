@@ -1,114 +1,114 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
-import L from 'leaflet'
-import { supabase } from '../supabaseClient'
-import { useAuth } from '../contexts/AuthContext'
-import { calculatePriceRange, haversineDistance, VEHICLE_MULTIPLIERS } from '../utils/priceEngine'
-
-// Fix default leaf icon issues
-delete L.Icon.Default.prototype._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
-
-const LocationMarker = ({ position, setPosition, label }) => {
-  useMapEvents({
-    click(e) {
-      if (label === 'pickup') {
-        setPosition(p => ({ ...p, pickup: e.latlng }))
-      } else if (label === 'destination') {
-        setPosition(p => ({ ...p, destination: e.latlng }))
-      }
-    },
-  })
-  return position ? <Marker position={position} /> : null
-}
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
+import { calculatePriceRange, MAX_SEATS } from '../utils/priceEngine';
+import LocationSearchInput from '../components/LocationSearchInput';
+import MapSelector from '../components/MapSelector';
+import { ArrowUpDown, AlertCircle, Info, Clock, Route } from 'lucide-react';
 
 export default function CreateRide() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth();
+  const navigate = useNavigate();
   
-  const [pickupName, setPickupName] = useState('')
-  const [destName, setDestName] = useState('')
-  const [departureTime, setDepartureTime] = useState('')
-  const [occupancy, setOccupancy] = useState(3)
-  const [totalPrice, setTotalPrice] = useState('')
-  const [error, setError] = useState(null)
-  
-  const [positions, setPositions] = useState({ pickup: null, destination: null })
-  const [activeSelect, setActiveSelect] = useState('pickup')
-  const [loading, setLoading] = useState(false)
-  // Price engine states
-  const [priceRange, setPriceRange] = useState(null)  // { min, max, suggested }
-  const [vehicleTypeForPrice, setVehicleTypeForPrice] = useState('Auto')
+  // Explicit geo state
+  const [pickup, setPickup] = useState(null); // { lat, lng, name }
+  const [destination, setDestination] = useState(null); // { lat, lng, name }
+  const [pickupNameInput, setPickupNameInput] = useState('');
+  const [destNameInput, setDestNameInput] = useState('');
 
-  // Recalculate price range when positions change
+  const [routeInfo, setRouteInfo] = useState(null); // { distance, duration, isFallback }
+  const [activeSelect, setActiveSelect] = useState('pickup');
+
+  // Form state
+  const [departureTime, setDepartureTime] = useState('');
+  const [occupancy, setOccupancy] = useState(3);
+  const [vehicleTypeForPrice, setVehicleTypeForPrice] = useState('Auto');
+  const [totalPrice, setTotalPrice] = useState('');
+
+  // UI state
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [priceRange, setPriceRange] = useState(null);
+
+  // Sync Input fields when objects change (e.g. from map click)
   useEffect(() => {
-    if (positions.pickup && positions.destination) {
-      const dist = haversineDistance(
-        positions.pickup.lat, positions.pickup.lng,
-        positions.destination.lat, positions.destination.lng
-      )
-      const range = calculatePriceRange(dist, vehicleTypeForPrice)
-      setPriceRange(range)
-      // Auto-set suggested price
-      if (!totalPrice) setTotalPrice(range.suggested.toString())
+    if (pickup) setPickupNameInput(pickup.name || '');
+  }, [pickup]);
+
+  useEffect(() => {
+    if (destination) setDestNameInput(destination.name || '');
+  }, [destination]);
+
+  // Recalculate price range when route updates
+  useEffect(() => {
+    if (routeInfo && routeInfo.distance) {
+      const range = calculatePriceRange(routeInfo.distance, vehicleTypeForPrice);
+      setPriceRange(range);
+      
+      // Auto-set suggested price only if user hasn't overridden excessively or if empty
+      // Simplest UX: set automatically when route updates.
+      setTotalPrice(range.suggested.toString());
     } else {
-      setPriceRange(null)
+      setPriceRange(null);
     }
-  }, [positions, vehicleTypeForPrice])
+  }, [routeInfo, vehicleTypeForPrice]);
+
+  const handleSwap = () => {
+    const tempLoc = pickup;
+    const tempName = pickupNameInput;
+
+    setPickup(destination);
+    setPickupNameInput(destNameInput);
+
+    setDestination(tempLoc);
+    setDestNameInput(tempName);
+
+    // Swap active selected context if needed
+    setActiveSelect(activeSelect === 'pickup' ? 'destination' : 'pickup');
+  };
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    const departureDate = new Date(departureTime)
+    const departureDate = new Date(departureTime);
     if (departureDate <= new Date()) {
-      setError("Departure time must be in the future.")
-      return
+      setError("Departure time must be in the future.");
+      return;
     }
 
     if (!user?.profile_completed) {
-      setError("You must complete your profile (Name and Avatar) before publishing rides.")
-      return
+      setError("You must complete your profile (Name and Avatar) before publishing rides.");
+      return;
     }
 
-    // New validation for empty ride details
-    if (!pickupName.trim() || !destName.trim() || !departureTime) {
-      setError("Please fill in all ride details (Pickup Name, Destination Name, Departure Time).")
-      return
+    if (!pickup?.lat || !destination?.lat) {
+      setError("Please set exact location pins for both pickup and destination.");
+      return;
     }
 
     if (!totalPrice || parseFloat(totalPrice) <= 0) {
-      setError("Please enter a valid total ride price (must be greater than ₹0).")
-      return
-    }
-
-    if (!positions.pickup || !positions.destination) {
-      setError("Please click on the map to set both pickup and destination markers.")
-      return
+      setError("Please enter a valid total ride price (must be greater than ₹0).");
+      return;
     }
 
     try {
-      setLoading(true)
-      setError(null)
+      setLoading(true);
+      setError(null);
 
       // Calculate price range for negotiation
-      let initialP = parseFloat(totalPrice)
-      let minP = priceRange?.min || Math.round(initialP * 0.85)
-      let maxP = priceRange?.max || Math.round(initialP * 1.25)
+      let initialP = parseFloat(totalPrice);
+      let minP = priceRange?.min || Math.round(initialP * 0.85);
+      let maxP = priceRange?.max || Math.round(initialP * 1.25);
 
       const { data: rideId, error: rpcError } = await supabase.rpc('create_ride_with_driver', {
         p_creator_id: user.id,
-        p_pickup_location_name: pickupName,
-        p_pickup_lat: positions.pickup.lat,
-        p_pickup_lng: positions.pickup.lng,
-        p_destination_name: destName,
-        p_destination_lat: positions.destination.lat,
-        p_destination_lng: positions.destination.lng,
+        p_pickup_location_name: pickup.name || pickupNameInput,
+        p_pickup_lat: pickup.lat,
+        p_pickup_lng: pickup.lng,
+        p_destination_name: destination.name || destNameInput,
+        p_destination_lat: destination.lat,
+        p_destination_lng: destination.lng,
         p_departure_time: new Date(departureTime).toISOString(),
         p_max_occupancy: parseInt(occupancy),
         p_total_price: initialP,
@@ -117,81 +117,99 @@ export default function CreateRide() {
         p_initial_price: initialP,
         p_min_price: minP,
         p_max_price: maxP,
-      })
+      });
 
-      if (rpcError) throw rpcError
+      if (rpcError) throw rpcError;
 
-      navigate(`/ride/${rideId}`)
+      navigate(`/ride/${rideId}`);
     } catch (err) {
-      setError(err.message)
+      setError(err.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>Request a Ride</h2>
-      </div>
+    <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+      <h2 style={{ marginBottom: '2rem' }}>Publish a Ride</h2>
 
       {!user?.profile_completed && (
-        <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>
+        <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <AlertCircle size={20} />
           <strong>Profile Incomplete:</strong> You must set your Name and Avatar on the Profile page before you can publish a ride.
         </div>
       )}
 
-      {error && <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>{error}</div>}
+      {error && (
+        <div style={{ color: '#ef4444', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <AlertCircle size={20} /> {error}
+        </div>
+      )}
 
-      <div className="glass-card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', opacity: user?.profile_completed ? 1 : 0.5, pointerEvents: user?.profile_completed ? 'auto' : 'none' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', opacity: user?.profile_completed ? 1 : 0.5, pointerEvents: user?.profile_completed ? 'auto' : 'none', alignItems: 'start' }}>
+        
+        {/* Left Form Panel */}
+        <form onSubmit={handleSubmit} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Pickup Location Name</label>
-            <input 
-              required 
-              type="text" 
-              className="input-field" 
-              value={pickupName} 
-              onChange={e => setPickupName(e.target.value)} 
-              placeholder="e.g. Main Gate" 
-            />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative' }}>
+            <div onClick={() => setActiveSelect('pickup')}>
+              <LocationSearchInput 
+                label="Pickup Location"
+                value={pickupNameInput}
+                onChange={setPickupNameInput}
+                onSelect={setPickup}
+                placeholder="Where from?"
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', margin: '-0.5rem 0', zIndex: 10 }}>
+              <button 
+                type="button" 
+                onClick={handleSwap}
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '50%', padding: '0.4rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                 title="Swap locations"
+              >
+                <ArrowUpDown size={16} color="var(--primary)" />
+              </button>
+            </div>
+
+            <div onClick={() => setActiveSelect('destination')}>
+              <LocationSearchInput 
+                label="Destination"
+                value={destNameInput}
+                onChange={setDestNameInput}
+                onSelect={setDestination}
+                placeholder="Where to?"
+              />
+            </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Destination Name</label>
-            <input 
-              required 
-              type="text" 
-              className="input-field" 
-              value={destName} 
-              onChange={e => setDestName(e.target.value)} 
-              placeholder="e.g. Science Block" 
-            />
-          </div>
+          <div className="responsive-grid-2">
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Departure Time</label>
+              <input 
+                required 
+                type="datetime-local" 
+                className="input-field" 
+                value={departureTime} 
+                onChange={e => setDepartureTime(e.target.value)} 
+              />
+            </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Departure Time</label>
-            <input 
-              required 
-              type="datetime-local" 
-              className="input-field" 
-              value={departureTime} 
-              onChange={e => setDepartureTime(e.target.value)} 
-            />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Available Seats (Capacity)</label>
-            <input 
-              required 
-              type="number" 
-              min="0" 
-              max="6" 
-              className="input-field" 
-              value={occupancy} 
-              onChange={e => setOccupancy(e.target.value)} 
-            />
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                Available Seats <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.8rem' }}>(max {MAX_SEATS})</span>
+              </label>
+              <input 
+                required 
+                type="number" 
+                min="1" 
+                max={MAX_SEATS} 
+                className="input-field" 
+                value={occupancy} 
+                onChange={e => setOccupancy(Math.min(parseInt(e.target.value) || 1, MAX_SEATS))} 
+              />
+            </div>
           </div>
 
           <div>
@@ -202,82 +220,122 @@ export default function CreateRide() {
             </select>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Total Ride Price (₹)</label>
-            <input 
-              required 
-              type="number" 
-              min="1"
-              step="1"
-              className="input-field" 
-              value={totalPrice} 
-              onChange={e => setTotalPrice(e.target.value)} 
-              placeholder="e.g. 120"
-              style={{
-                borderColor: priceRange && totalPrice
-                  ? parseFloat(totalPrice) >= priceRange.min && parseFloat(totalPrice) <= priceRange.max
-                    ? 'rgba(34,197,94,0.5)'
-                    : 'rgba(239,68,68,0.5)'
-                  : undefined
-              }}
-            />
-            {priceRange && (
-              <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', background: 'rgba(99,102,241,0.1)', borderRadius: '8px', fontSize: '0.8rem' }}>
-                <span style={{ color: 'var(--primary)', fontWeight: '600' }}>📊 Recommended:</span>
-                <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>₹{priceRange.min} – ₹{priceRange.max}</span>
-                <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>· Suggested: ₹{priceRange.suggested}</span>
+          <div style={{ padding: '1rem', background: 'var(--bg-subtle)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: '500' }}>Fare Details</label>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>₹</span>
+              <input 
+                required 
+                type="number" 
+                min="20"
+                step="1"
+                className="input-field" 
+                value={totalPrice} 
+                onChange={e => setTotalPrice(e.target.value)} 
+                placeholder="0"
+                style={{
+                  fontSize: '1.2rem',
+                  fontWeight: 'bold',
+                  borderColor: priceRange && totalPrice
+                    ? parseFloat(totalPrice) >= priceRange.min && parseFloat(totalPrice) <= priceRange.max
+                      ? 'rgba(34,197,94,0.5)'
+                      : 'rgba(239,68,68,0.5)' // red if outside range
+                    : undefined
+                }}
+              />
+            </div>
+
+            {priceRange ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                  <span>Fair Range Recommendation</span>
+                  <span style={{ color: 'var(--primary)', fontWeight: '600' }}>₹{priceRange.min} – ₹{priceRange.max}</span>
+                </div>
                 {totalPrice && (parseFloat(totalPrice) < priceRange.min || parseFloat(totalPrice) > priceRange.max) && (
-                  <div style={{ color: '#ef4444', marginTop: '0.25rem' }}>⚠️ Price is outside the recommended range</div>
+                  <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.2rem' }}>
+                    <AlertCircle size={14} /> Warning: Price is outside the recommended range and may lack drivers or buyers.
+                  </div>
+                )}
+                {totalPrice > 0 && (
+                  <p style={{ color: 'var(--text-muted)', marginTop: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.4rem' }}>
+                    Estimated contribution per person: ₹{(parseFloat(totalPrice) / Math.max(1, parseInt(occupancy) + 1)).toFixed(2)}
+                  </p>
                 )}
               </div>
-            )}
-            {totalPrice > 0 && (
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-                Estimated per person: ₹{(parseFloat(totalPrice) / Math.max(1, parseInt(occupancy) + 1)).toFixed(2)}
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <Info size={14} /> Enter pickup and destination to get fare estimates.
               </p>
             )}
           </div>
-          <button type="submit" className="btn" disabled={loading} style={{ marginTop: '1rem', width: '100%', fontSize: '1.1rem' }}>
-            {loading ? 'Publishing...' : 'Broadcast to Marketplace'}
+          
+          <button type="submit" className="btn" disabled={loading} style={{ marginTop: '0.5rem', width: '100%', fontSize: '1.1rem', padding: '0.8rem' }}>
+            {loading ? 'Publishing...' : 'Broadcast Ride to Market'}
           </button>
         </form>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+        {/* Right Map Panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+          
+          <div style={{ display: 'flex', gap: '1rem', background: 'var(--bg-card)', padding: '0.5rem', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <button 
               type="button"
               className={activeSelect === 'pickup' ? 'btn' : 'btn btn-secondary'} 
-              style={{ flex: 1, padding: '0.5rem' }}
+              style={{ flex: 1, padding: '0.5rem 0', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}
               onClick={() => setActiveSelect('pickup')}
             >
-              Set Pickup
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#22c55e' }}></div> Pickup
             </button>
             <button 
               type="button"
               className={activeSelect === 'destination' ? 'btn' : 'btn btn-secondary'} 
-              style={{ flex: 1, padding: '0.5rem' }}
+              style={{ flex: 1, padding: '0.5rem 0', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}
               onClick={() => setActiveSelect('destination')}
             >
-              Set Destination
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444' }}></div> Destination
             </button>
           </div>
-          <div style={{ flex: 1, minHeight: '300px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-            <MapContainer center={[28.6139, 77.2090]} zoom={13} style={{ height: '100%', width: '100%' }}>
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution="&copy; OpenStreetMap contributors"
-              />
-              {activeSelect === 'pickup' && <LocationMarker position={positions.pickup} setPosition={setPositions} label="pickup" />}
-              {activeSelect === 'destination' && <LocationMarker position={positions.destination} setPosition={setPositions} label="destination" />}
-              {positions.pickup && activeSelect !== 'pickup' && <Marker position={positions.pickup} opacity={0.5} />}
-              {positions.destination && activeSelect !== 'destination' && <Marker position={positions.destination} opacity={0.5} />}
-            </MapContainer>
-          </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-            Click on the map to place the {activeSelect} marker.
+
+          <MapSelector 
+            pickup={pickup} 
+            destination={destination} 
+            activeSelect={activeSelect}
+            onLocationChange={(type, loc) => {
+              if (type === 'pickup') {
+                setPickup(loc);
+                setPickupNameInput(loc.name);
+                setActiveSelect('destination'); // Auto advance to destination
+              } else {
+                setDestination(loc);
+                setDestNameInput(loc.name);
+              }
+            }}
+            onRouteCalculated={setRouteInfo}
+          />
+
+          {routeInfo && (
+            <div className="glass-card" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-around', alignItems: 'center', background: 'rgba(99, 102, 241, 0.05)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                <Route size={20} color="var(--primary)" />
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Distance</span>
+                <strong style={{ fontSize: '1.1rem' }}>{routeInfo.distance.toFixed(1)} km</strong>
+              </div>
+              <div style={{ width: '1px', height: '40px', background: 'var(--border)' }}></div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                <Clock size={20} color="var(--primary)" />
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Est. Time</span>
+                <strong style={{ fontSize: '1.1rem' }}>{Math.ceil(routeInfo.duration)} mins</strong>
+              </div>
+            </div>
+          )}
+
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '-0.5rem' }}>
+            Click anywhere on the map or drag the markers to adjust {activeSelect}.
           </p>
+
         </div>
       </div>
     </div>
-  )
+  );
 }

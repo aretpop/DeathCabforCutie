@@ -35,8 +35,7 @@ export default function ProfilePublic() {
         .from('rides')
         .select('*')
         .eq('creator_id', id)
-        .neq('status', 'completed')
-        .neq('status', 'cancelled')
+        .in('status', ['published', 'active', 'pending_driver', 'negotiating', 'price_proposed'])
         .order('departure_time', { ascending: true })
 
       if (ridesError) throw ridesError
