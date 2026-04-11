@@ -16,6 +16,7 @@ export default function Login() {
           queryParams: {
             prompt: 'select_account',
           },
+          redirectTo: window.location.origin,
           // Restrict to campus domain if supported by cloud config, 
           // else we handle it in AuthContext/Router after redirect
         }
