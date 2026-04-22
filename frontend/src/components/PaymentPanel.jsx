@@ -2,12 +2,24 @@ import React, { useState, useEffect } from 'react'
 import { IndianRupee, QrCode, Copy, Check, ShieldCheck, Users, Smartphone, Monitor } from 'lucide-react'
 
 // ── UPI App configs ─────────────────────────────────────────────────────────
+// WHY native schemes instead of intent://?:
+//   intent:// links are Android-specific and frequently blocked by mobile
+//   Chrome security policies. Each UPI app exposes its own URI scheme
+//   which is registered with Android/iOS and handled directly.
+//
+//   Google Pay  → tez://upi/pay      (or googlepay://upi/pay — both work)
+//   PhonePe     → phonepe://pay
+//   Paytm       → paytmmp://pay
+//   Generic     → upi://pay          (OS shows app chooser — most reliable)
+//
+//   On desktop none of these open (no UPI app installed) → QR is primary.
 const UPI_APPS = [
   {
     id: 'gpay',
     name: 'Google Pay',
-    short: 'GPay',
     pkg: 'com.google.android.apps.nbu.paisa.user',
+    scheme: 'tez',       // tez://upi/pay?...
+    path: 'upi/pay',
     color: '#4285F4',
     bg: 'rgba(66,133,244,0.1)',
     border: 'rgba(66,133,244,0.3)',
@@ -23,8 +35,9 @@ const UPI_APPS = [
   {
     id: 'phonepe',
     name: 'PhonePe',
-    short: 'PhonePe',
     pkg: 'com.phonepe.app',
+    scheme: 'phonepe',   // phonepe://pay?...
+    path: 'pay',
     color: '#5f259f',
     bg: 'rgba(95,37,159,0.1)',
     border: 'rgba(95,37,159,0.3)',
@@ -38,8 +51,9 @@ const UPI_APPS = [
   {
     id: 'paytm',
     name: 'Paytm',
-    short: 'Paytm',
     pkg: 'net.one97.paytm',
+    scheme: 'paytmmp',  // paytmmp://pay?...
+    path: 'pay',
     color: '#00BAF2',
     bg: 'rgba(0,186,242,0.1)',
     border: 'rgba(0,186,242,0.3)',
@@ -53,8 +67,9 @@ const UPI_APPS = [
   {
     id: 'generic',
     name: 'Other UPI App',
-    short: 'UPI',
     pkg: null,
+    scheme: 'upi',     // upi://pay?... → OS shows app chooser
+    path: 'pay',
     color: '#248A52',
     bg: 'rgba(36,138,82,0.1)',
     border: 'rgba(36,138,82,0.3)',
@@ -105,19 +120,40 @@ export default function PaymentPanel({ driver, totalFare, riderCount }) {
   }
   if (!upiId) return null
 
-  // ── Fare split ─────────────────────────────────────────────────────────────
+  // ── Sanitise inputs ────────────────────────────────────────────────────────
+  // pn: strip anything that's not alphanumeric / space — special chars break UPI
+  const safeName   = (driver.name || 'Driver').replace(/[^a-zA-Z0-9 ]/g, '').trim() || 'Driver'
+  // am: must be a plain number with exactly 2 decimal places — NO ₹, NO commas
   const confirmedRiders = Math.max(1, riderCount || 1)
-  const perPerson       = Math.ceil((totalFare / confirmedRiders) * 100) / 100  // round up to 2dp
+  const rawPerPerson    = totalFare / confirmedRiders
+  const amount          = parseFloat(rawPerPerson.toFixed(2))  // e.g. 42.50
 
-  // ── Build link factory ─────────────────────────────────────────────────────
-  const encodedName = encodeURIComponent(driver.name || 'Driver')
-  const encodedNote = encodeURIComponent('CampusRides Fare')
+  // ── Build UPI params (shared across all apps) ─────────────────────────────
+  const params = [
+    `pa=${encodeURIComponent(upiId)}`,
+    `pn=${encodeURIComponent(safeName)}`,
+    `am=${amount}`,          // plain number — do NOT encode
+    `cu=INR`,
+    `tn=${encodeURIComponent('CampusRides Fare')}`,
+  ].join('&')
 
-  const baseParams  = `pa=${encodeURIComponent(upiId)}&pn=${encodedName}&am=${perPerson}&cu=INR&tn=${encodedNote}`
-  const genericLink = `upi://pay?${baseParams}`
-  const intentLink  = (pkg) =>
-    `intent://pay?${baseParams}#Intent;scheme=upi;package=${pkg};end`
+  // ── Per-app link builder ───────────────────────────────────────────────────
+  // Rules:
+  //   • upi://pay?...        → generic (OS shows app chooser) — MOST RELIABLE
+  //   • tez://upi/pay?...    → Google Pay native scheme
+  //   • phonepe://pay?...    → PhonePe native scheme
+  //   • paytmmp://pay?...    → Paytm native scheme
+  //   intent:// is intentionally avoided — it is blocked by Chrome security
+  //   policies on many Android versions and always fails on iOS/desktop.
+  const buildLink = (app) => {
+    if (app.id === 'generic') return `upi://pay?${params}`
+    // Google Pay uses a different path: tez://upi/pay
+    if (app.id === 'gpay')    return `tez://upi/pay?${params}`
+    // PhonePe and Paytm: scheme://pay?params
+    return `${app.scheme}://${app.path}?${params}`
+  }
 
+  const genericLink = `upi://pay?${params}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=14&data=${encodeURIComponent(genericLink)}`
 
   // ── Copy ───────────────────────────────────────────────────────────────────
@@ -135,15 +171,23 @@ export default function PaymentPanel({ driver, totalFare, riderCount }) {
   // ── App payment handler ────────────────────────────────────────────────────
   const showToast = (msg) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 3500)
+    setTimeout(() => setToast(null), 4000)
   }
 
   const payWith = (app) => {
-    const link = app.pkg ? intentLink(app.pkg) : genericLink
+    const link = buildLink(app)
+    // Log for easy debugging — copy from DevTools on mobile
+    console.log(`[PaymentPanel] Opening ${app.name}:`, link)
+    console.log(`[PaymentPanel] UPI ID: ${upiId} | Amount: ${amount} | Name: ${safeName}`)
+
+    // Attempt to open the app
     window.location.href = link
-    // After 2.2s, if still here, show fallback hint
+
+    // After 2.2 s if still on the page, the app didn't open
     setTimeout(() => {
-      showToast(`If ${app.name} didn't open, scan the QR code below or copy the UPI ID.`)
+      showToast(
+        `${app.name} didn't open. Make sure it's installed and try again, or scan the QR code below.`
+      )
     }, 2200)
   }
 
@@ -211,7 +255,7 @@ export default function PaymentPanel({ driver, totalFare, riderCount }) {
           {/* Amount hero */}
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '0.15rem', color: 'var(--primary)' }}>
             <span style={{ fontSize: '1.3rem', fontWeight: '700' }}>₹</span>
-            <span style={{ fontSize: '3rem', fontWeight: '900', lineHeight: 1, letterSpacing: '-0.04em' }}>{perPerson}</span>
+            <span style={{ fontSize: '3rem', fontWeight: '900', lineHeight: 1, letterSpacing: '-0.04em' }}>{amount}</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '0.2rem', alignSelf: 'flex-end', paddingBottom: '0.3rem' }}>your share</span>
           </div>
         </div>
@@ -261,7 +305,9 @@ export default function PaymentPanel({ driver, totalFare, riderCount }) {
                 <span style={{ fontWeight: '700', fontSize: '0.95rem', color: isMobile ? app.color : 'var(--text-muted)', flex: 1 }}>
                   Pay with {app.name}
                 </span>
-                <span style={{ fontSize: '1rem', opacity: 0.5 }}>→</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace', opacity: 0.6, fontSize: '0.72rem' }}>
+                  {buildLink(app).split('?')[0]}
+                </span>
               </button>
             ))}
           </div>
