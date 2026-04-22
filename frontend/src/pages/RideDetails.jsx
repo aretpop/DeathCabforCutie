@@ -12,6 +12,7 @@ import CancelRideButton from '../components/CancelRideButton'
 import LeaveRideButton from '../components/LeaveRideButton'
 import RideReviewPanel from '../components/RideReviewPanel'
 import NegotiationPanel from '../components/NegotiationPanel'
+import PaymentPanel from '../components/PaymentPanel'
 import { getRoute, openNavigation } from '../utils/geoUtils'
 import { notifyJoinRequest, notifyJoinAccepted, notifyJoinRejected } from '../utils/notificationService'
 import { PRIORITY_CONFIG } from '../utils/priorityEngine'
@@ -639,6 +640,33 @@ export default function RideDetails() {
                 ))}
               </div>
             </div>
+          )
+        })()}
+
+        {/* ── UPI Payment Panel ──────────────────────────────────────────────────
+            Show once a driver is assigned & ride is in a payable state.
+            Visible to the publisher AND approved passengers.
+        ─────────────────────────────────────────────────────────────────────── */}
+        {(isCreator || isApproved) && (isActive || isAwaiting || isCompleted) && (() => {
+          // Resolve driver from whichever source is available
+          const driverRaw = ride.external_driver || ride.registered_vehicles || ride.drivers
+          if (!driverRaw?.phone && !driverRaw?.mobile_number) return null
+          const driverForPayment = {
+            name:  driverRaw.name || 'Driver',
+            phone: driverRaw.phone || driverRaw.mobile_number,
+          }
+          // Per-person share (mirrors the fare split logic on the page)
+          const joined      = ride.max_occupancy - ride.available_seats
+          const occupants   = joined + 1
+          const perPerson   = ride.total_price > 0
+            ? Math.ceil(ride.total_price / Math.max(1, occupants))
+            : null
+          return (
+            <PaymentPanel
+              driver={driverForPayment}
+              fare={ride.total_price || 0}
+              perPerson={perPerson}
+            />
           )
         })()}
 
