@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Link } from 'react-router-dom'
-import { User, AlertTriangle, ExternalLink, Upload, Eye, EyeOff } from 'lucide-react'
+import { User, AlertTriangle, ExternalLink, Upload, Eye, EyeOff, Star, Calendar } from 'lucide-react'
 
 export default function ProfilePage() {
   const { user } = useAuth()
@@ -87,16 +87,65 @@ export default function ProfilePage() {
   }
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>My Profile Settings</h2>
-        <Link to={`/profile/${user?.id}`} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', textDecoration: 'none' }}>
-          View Public Profile <ExternalLink size={16} />
+    <div style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+      {/* ── Profile Preview Card ───────────────────────────────────────── */}
+      <div className="glass-card" style={{
+        display: 'flex', alignItems: 'center', gap: '1rem',
+        padding: '1.25rem', position: 'relative',
+      }}>
+        {/* Avatar preview */}
+        <div style={{
+          flexShrink: 0, width: '68px', height: '68px', borderRadius: '50%',
+          background: 'var(--primary)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', overflow: 'hidden', color: 'white',
+          boxShadow: '0 0 0 3px rgba(36,138,82,0.15), 0 2px 8px rgba(0,0,0,0.1)',
+        }}>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={e => { e.target.style.display = 'none' }} />
+          ) : (
+            <User size={32} />
+          )}
+        </div>
+
+        {/* Text info */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', minWidth: 0, flex: 1 }}>
+          <span style={{ fontWeight: '700', fontSize: '1.15rem', color: 'var(--text-main)', lineHeight: 1.2 }}>
+            {name || 'Your Name'}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.875rem', color: 'var(--text-muted)', flexWrap: 'nowrap' }}>
+            <Star size={13} fill="#fbbf24" color="#fbbf24" />
+            <span style={{ fontWeight: '700', color: '#b45309' }}>
+              {user?.rating ? user.rating.toFixed(1) : '—'}
+            </span>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span>{user?.total_reviews || 0} reviews</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            <Calendar size={12} />
+            <span>Joined {new Date(user?.created_at || Date.now()).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>
+          </div>
+        </div>
+
+        {/* View public profile link */}
+        <Link
+          to={`/profile/${user?.id}`}
+          style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', color: 'var(--primary)', textDecoration: 'none', fontSize: '0.72rem', fontWeight: '600' }}
+          title="View public profile"
+        >
+          <ExternalLink size={16} />
+          View
         </Link>
       </div>
 
+      {/* Page heading */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: 'var(--text-muted)' }}>Profile Settings</h2>
+      </div>
+
       {!user?.profile_completed && (
-        <div style={{ marginBottom: '2rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderLeft: '4px solid #ef4444', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderLeft: '4px solid #ef4444', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <AlertTriangle color="#ef4444" size={24} />
           <div>
             <h4 style={{ margin: 0, color: '#ef4444' }}>Profile Incomplete</h4>
