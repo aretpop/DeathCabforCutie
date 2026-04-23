@@ -133,6 +133,11 @@ img {
   padding: 1rem;
 }
 
+/* Page content wrapper — gives breathing room between mobile header and page body */
+.page-content {
+  padding-top: 0.5rem;
+}
+
 /* Nav – DESKTOP (hidden on mobile) */
 .navbar {
   display: flex;
@@ -172,7 +177,7 @@ img {
   position: sticky;
   top: 0;
   z-index: 900;
-  margin: -1rem -1rem 1.5rem -1rem; /* cancel app-container padding, extra bottom space */
+  margin: -1rem -1rem 2rem -1rem; /* cancel app-container padding, extra bottom space */
 }
 
 .hamburger-btn {
@@ -431,6 +436,15 @@ img {
     padding: 0.85rem 1rem;
     font-size: 1rem;
     justify-content: center;
+  }
+
+  /* Breathing room: page-level headings shouldn't feel glued to the sticky navbar */
+  h2:not([style*="margin: 0"]) {
+    margin-top: 0.75rem;
+  }
+
+  .page-content {
+    padding-top: 1rem;
   }
 }
 
