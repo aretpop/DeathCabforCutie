@@ -2,13 +2,19 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { MapPin, Users, Clock, IndianRupee } from 'lucide-react'
+import { MapPin, Users, Clock, IndianRupee, Search, ArrowLeftRight, X } from 'lucide-react'
 import ProfileCard from '../components/ProfileCard'
 
 export default function Rides() {
   const [rides, setRides] = useState([])
   const [loading, setLoading] = useState(true)
   const { user } = useAuth()
+
+  // ── Search state ──────────────────────────────────────────────────────────
+  const [fromQuery, setFromQuery]   = useState('')
+  const [toQuery, setToQuery]       = useState('')
+  const [timeQuery, setTimeQuery]   = useState('')   // 'HH:MM' local time prefix filter
+  const [searched, setSearched]     = useState(false) // true after first search
 
   useEffect(() => {
     fetchRides()
@@ -24,7 +30,7 @@ export default function Rides() {
     return () => supabase.removeChannel(channel)
   }, [])
 
-    const fetchRides = async () => {
+  const fetchRides = async () => {
     try {
       const { data, error } = await supabase
         .from('rides')
@@ -48,26 +54,190 @@ export default function Rides() {
     }
   }
 
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  const normalize = (s = '') => s.toLowerCase().trim()
+
+  const filteredRides = rides.filter(ride => {
+    if (!searched) return true                                // show all before first search
+
+    const pickup  = normalize(ride.pickup_location_name  || ride.start_location || '')
+    const dest    = normalize(ride.destination_name      || ride.end_location   || '')
+    const from    = normalize(fromQuery)
+    const to      = normalize(toQuery)
+
+    if (from && !pickup.includes(from)) return false
+    if (to   && !dest.includes(to))    return false
+
+    if (timeQuery) {
+      // Match rides whose departure time starts with the typed HH:MM prefix
+      const rideTime = new Date(ride.departure_time)
+        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      if (!rideTime.startsWith(timeQuery)) return false
+    }
+
+    return true
+  })
+
+  const handleSearch = (e) => {
+    e.preventDefault()
+    setSearched(true)
+  }
+
+  const handleClear = () => {
+    setFromQuery('')
+    setToQuery('')
+    setTimeQuery('')
+    setSearched(false)
+  }
+
+  const handleSwap = () => {
+    setFromQuery(toQuery)
+    setToQuery(fromQuery)
+  }
+
+  const hasFilter = fromQuery || toQuery || timeQuery
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) return <div style={{ textAlign: 'center', padding: '2rem' }}>Loading rides...</div>
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      {/* ── Page Header ───────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <h2>Available Rickshaws</h2>
-        <Link to="/create" className="btn">
+        <Link to="/create" className="btn" style={{ width: 'auto' }}>
           Publish Ride
         </Link>
       </div>
 
-      {rides.length === 0 ? (
+      {/* ── Search Panel ─────────────────────────────────────────────────── */}
+      <form onSubmit={handleSearch} className="glass-card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+          {/* From / Swap / To row */}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* From */}
+            <div style={{ flex: '1 1 180px', position: 'relative' }}>
+              <MapPin size={15} style={{ position: 'absolute', top: '50%', left: '0.75rem', transform: 'translateY(-50%)', color: 'var(--primary)', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                value={fromQuery}
+                onChange={e => setFromQuery(e.target.value)}
+                placeholder="From (pickup location)"
+                className="input-field"
+                style={{ paddingLeft: '2.25rem' }}
+              />
+            </div>
+
+            {/* Swap button */}
+            <button
+              type="button"
+              onClick={handleSwap}
+              title="Swap locations"
+              style={{
+                flexShrink: 0,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: '50%',
+                padding: '0.45rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.07)',
+                transition: 'transform 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'rotate(180deg)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'rotate(0deg)'}
+            >
+              <ArrowLeftRight size={15} color="var(--primary)" />
+            </button>
+
+            {/* To */}
+            <div style={{ flex: '1 1 180px', position: 'relative' }}>
+              <MapPin size={15} style={{ position: 'absolute', top: '50%', left: '0.75rem', transform: 'translateY(-50%)', color: 'var(--accent)', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                value={toQuery}
+                onChange={e => setToQuery(e.target.value)}
+                placeholder="To (destination)"
+                className="input-field"
+                style={{ paddingLeft: '2.25rem' }}
+              />
+            </div>
+          </div>
+
+          {/* Departure time + action buttons row */}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Time filter */}
+            <div style={{ position: 'relative', flex: '1 1 160px' }}>
+              <Clock size={15} style={{ position: 'absolute', top: '50%', left: '0.75rem', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                type="time"
+                value={timeQuery}
+                onChange={e => setTimeQuery(e.target.value)}
+                className="input-field"
+                style={{ paddingLeft: '2.25rem', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* Search button */}
+            <button
+              type="submit"
+              className="btn"
+              style={{ flex: '1 1 120px', minWidth: 0, gap: '0.4rem', whiteSpace: 'nowrap' }}
+            >
+              <Search size={16} />
+              Search
+            </button>
+
+            {/* Clear button — only when filters active */}
+            {(hasFilter || searched) && (
+              <button
+                type="button"
+                onClick={handleClear}
+                title="Clear search"
+                style={{
+                  flexShrink: 0,
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Result count hint */}
+        {searched && (
+          <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <Search size={12} />
+            {filteredRides.length === 0
+              ? 'No rides found matching your search.'
+              : `${filteredRides.length} ride${filteredRides.length !== 1 ? 's' : ''} found`}
+          </div>
+        )}
+      </form>
+
+      {/* ── Ride Cards ───────────────────────────────────────────────────── */}
+      {filteredRides.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '3rem' }}>
           <MapPin size={48} color="var(--text-muted)" style={{ marginBottom: '1rem', opacity: 0.5 }} />
-          <h3>No rides currently available</h3>
-          <p style={{ color: 'var(--text-muted)' }}>Be the first to share a rickshaw ride today!</p>
+          <h3>{searched ? 'No rides match your search' : 'No rides currently available'}</h3>
+          <p style={{ color: 'var(--text-muted)' }}>
+            {searched ? 'Try adjusting the From / To fields.' : 'Be the first to share a rickshaw ride today!'}
+          </p>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-          {rides.map(ride => {
+          {filteredRides.map(ride => {
             // Owners always see their own real identity
             const isOwn = user?.id === ride.creator_id
             // Anonymize the publisher if they've opted out and it's not their own ride card

@@ -186,7 +186,7 @@ export default function CreateRide() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', opacity: user?.profile_completed ? 1 : 0.5, pointerEvents: user?.profile_completed ? 'auto' : 'none', alignItems: 'start' }} className="create-ride-grid">
         
         {/* Left Form Panel */}
-        <form onSubmit={handleSubmit} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <form onSubmit={handleSubmit} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '0.25rem' }}>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative' }}>
             <div onClick={() => setActiveSelect('pickup')}>
@@ -427,9 +427,12 @@ export default function CreateRide() {
             )}
           </div>
 
-          <button type="submit" className="btn" disabled={loading} style={{ marginTop: '0.5rem', width: '100%', fontSize: '1.1rem', padding: '0.8rem' }}>
-            {loading ? 'Publishing...' : 'Broadcast Ride to Market'}
-          </button>
+          {/* ── Sticky Broadcast Button ──────────────────────────────── */}
+          <div className="sticky-action-footer">
+            <button type="submit" className="btn" disabled={loading}>
+              {loading ? 'Publishing...' : '📡 Broadcast Ride to Market'}
+            </button>
+          </div>
         </form>
 
         {/* Right Map Panel */}

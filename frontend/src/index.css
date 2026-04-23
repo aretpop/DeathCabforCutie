@@ -89,6 +89,10 @@ h1, h2, h3, h4, h5, h6 {
 
 .input-field {
   width: 100%;
+  /* min-width:0 is critical — prevents flex/grid children (e.g. datetime-local)
+     from overflowing their container on mobile */
+  min-width: 0;
+  max-width: 100%;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--border);
   color: var(--text-main);
@@ -322,4 +326,26 @@ img {
   .driver-stat-pill {
     padding: 0.6rem 0.35rem;
   }
+}
+
+/* ── Sticky footer for action buttons (e.g. Broadcast Ride) ─────────────── */
+.sticky-action-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  /* Fade from solid background so content behind looks natural */
+  background: linear-gradient(to top, var(--bg-solid, #fff) 70%, transparent);
+  padding: 0.75rem 0 0.25rem;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.sticky-action-footer .btn {
+  width: 100%;
+  height: 50px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  justify-content: center;
 }
