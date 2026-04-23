@@ -172,7 +172,7 @@ img {
   position: sticky;
   top: 0;
   z-index: 900;
-  margin: -1rem -1rem 1rem -1rem; /* cancel app-container padding */
+  margin: -1rem -1rem 1.5rem -1rem; /* cancel app-container padding, extra bottom space */
 }
 
 .hamburger-btn {
@@ -405,8 +405,6 @@ img {
 @media (max-width: 768px) {
   .app-container {
     padding: 1rem;
-    /* Extra top padding to account for sticky mobile header */
-    padding-top: 0;
   }
   .glass-card {
     padding: 1.25rem;
