@@ -51,8 +51,13 @@ const AdminRoute = ({ children }) => {
   return children
 }
 
+import { usePushNotifications } from './hooks/usePushNotifications'
+
 function AppRoutes() {
   const { user, role } = useAuth()
+  
+  // Initialize Push Notifications (only runs on native devices)
+  usePushNotifications()
 
   return (
     <div className="app-container">

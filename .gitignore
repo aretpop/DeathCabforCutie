@@ -32,3 +32,6 @@ build/
 
 # Optional: Ignore package-lock.json at root if it was created accidentally
 # package-lock.json
+
+# Firebase Credentials
+firebase-service-account.json
