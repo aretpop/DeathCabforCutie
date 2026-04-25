@@ -169,6 +169,24 @@ Messages
   margin-bottom: 30px;
 }
 
+.messages .message.message-system {
+  float: none;
+  clear: both;
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+  text-align: center;
+  border-radius: 10px;
+  margin: 10px auto;
+  max-width: 90%;
+  font-size: 11px;
+  font-style: italic;
+  margin-left: auto;
+  margin-right: auto;
+}
+.messages .message.message-system::before {
+  display: none;
+}
+
 .messages .message.new {
   transform: scale(0);
   transform-origin: 0 0;

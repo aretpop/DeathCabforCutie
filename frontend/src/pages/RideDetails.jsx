@@ -241,6 +241,8 @@ export default function RideDetails() {
 
   const isCreator = user?.id === ride.creator_id
   const isApproved = myRequest?.status === 'approved'
+  // Driver who accepted the ride via the negotiation flow
+  const isAssignedDriver = !!(user?.id && ride.assigned_driver_id && user.id === ride.assigned_driver_id)
 
   // Status flags
   const NEGOTIATION_STATUSES = ['pending_driver', 'negotiating', 'price_proposed']
@@ -253,7 +255,8 @@ export default function RideDetails() {
   const isRejected = ride.status === 'rejected'
   // Can show passenger interaction only when ride is active/published/completed
   const isLiveRide = isPublished || isActive
-  const canChat = (isCreator || isApproved) && !isCancelled && !isNegotiating
+  // Creator, approved riders, AND the assigned driver can all chat
+  const canChat = (isCreator || isApproved || isAssignedDriver) && !isCancelled && !isNegotiating
 
   // ── Privacy logic ──────────────────────────────────────────────────────────
   // Publisher's identity is visible when:
@@ -684,7 +687,8 @@ export default function RideDetails() {
         {/* Chat Interface */}
         <RideChat 
           rideId={id} 
-          currentUserId={user?.id} 
+          currentUserId={user?.id}
+          driverUserId={ride.assigned_driver_id || null}
           canChat={canChat} 
           isCompleted={isCompleted || isCancelled} 
         />

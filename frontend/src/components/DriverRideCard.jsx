@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { MapPin, Clock, IndianRupee, Navigation, Route, Car, CheckCircle2, Calendar } from 'lucide-react'
+import { MapPin, Clock, IndianRupee, Navigation, Route, Car, CheckCircle2, Calendar, MessageCircle } from 'lucide-react'
 import NegotiationPanel from './NegotiationPanel'
 import { navigateToPickup, navigateRide } from '../utils/geoUtils'
 import { supabase } from '../supabaseClient'
@@ -267,6 +267,28 @@ export default function DriverRideCard({ ride, onUpdate }) {
             onMouseLeave={(e) => e.currentTarget.style.filter = 'brightness(1)'}
           >
             <Route size={18} /> Start Ride
+          </button>
+
+          {/* ── Chat with Riders ── */}
+          <button
+            onClick={() => window.location.href = `/ride/${ride.id}`}
+            title="Chat with riders"
+            style={{
+              width: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: '#6366f1',
+              border: '1.5px solid rgba(99, 102, 241, 0.4)',
+              borderRadius: '8px', padding: '0.75rem',
+              fontWeight: '700', cursor: 'pointer',
+              transition: '0.2s',
+              fontSize: '0.95rem',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)' }}
+          >
+            <MessageCircle size={18} />
+            Chat with Riders
           </button>
 
           {/* ── Mark as Completed ── */}

@@ -5,7 +5,7 @@ import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
 import '../chat.css'
 
-export default function RideChat({ rideId, currentUserId, canChat, isCompleted }) {
+export default function RideChat({ rideId, currentUserId, driverUserId, canChat, isCompleted }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const messagesEndRef = useRef(null)
@@ -103,7 +103,12 @@ export default function RideChat({ rideId, currentUserId, canChat, isCompleted }
             <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: '2rem' }}>Say hello! Start coordinating your ride.</div>
           ) : (
             messages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} isMe={msg.sender_id === currentUserId} />
+              <ChatMessage 
+                key={msg.id} 
+                message={msg} 
+                isMe={msg.sender_id === currentUserId} 
+                isDriver={msg.sender_id === driverUserId && msg.sender_id !== null}
+              />
             ))
           )}
           <div ref={messagesEndRef} />

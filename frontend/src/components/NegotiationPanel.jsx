@@ -173,6 +173,12 @@ export default function NegotiationPanel({ ride, offer, isBestOffer = false, onR
         content: `✅ ${studentName} accepted ${driverName}'s offer of ₹${currentPrice}.`,
         message_type: 'system'
       }])
+      // System message: driver joins the unified chat room
+      await supabase.from('chat_messages').insert([{
+        ride_id: ride.id, sender_id: user?.id,
+        content: `🚗 ${driverName} has joined the chat. Coordinate directly here!`,
+        message_type: 'system'
+      }])
       // Notify ride creator + all approved passengers that a driver was assigned
       const { data: approvedReqs } = await supabase
         .from('ride_requests').select('user_id').eq('ride_id', ride.id).eq('status', 'approved')
@@ -220,6 +226,12 @@ export default function NegotiationPanel({ ride, offer, isBestOffer = false, onR
       await supabase.from('chat_messages').insert([{
         ride_id: ride.id, sender_id: user?.id,
         content: `✅ ${driverName} accepted ${studentName}'s offer of ₹${currentPrice}.`,
+        message_type: 'system'
+      }])
+      // System message: driver joins the unified chat room
+      await supabase.from('chat_messages').insert([{
+        ride_id: ride.id, sender_id: user?.id,
+        content: `🚗 ${driverName} has joined the chat. Coordinate directly here!`,
         message_type: 'system'
       }])
       // Notify ride creator + all approved passengers that a driver was assigned
