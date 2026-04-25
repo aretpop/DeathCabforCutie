@@ -12,6 +12,7 @@ export const NOTIF_TYPES = {
   // ── New types ──────────────────────────────────────────────
   NEW_RIDE:        'NEW_RIDE',        // instant — ride posted, sent to matching drivers
   RIDE_REMINDER:   'RIDE_REMINDER',   // scheduled — 5 min before departure
+  NEW_MESSAGE:     'NEW_MESSAGE',     // new chat message
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -161,4 +162,53 @@ export async function notifyNewRide({
 
   const { error } = await supabase.from('notifications').insert(rows)
   if (error) console.error('[notificationService] notifyNewRide insert error:', error.message)
+}
+
+/**
+ * Notify participants about a new chat message, IF they do not have the chat currently open.
+ * Participants = creator, approved requests, assigned driver.
+ */
+export async function notifyNewMessage({ rideId, senderId, senderName, messageText }) {
+  // 1. Identify all participants
+  const [{ data: ride }, { data: reqs }] = await Promise.all([
+    supabase.from('rides').select('creator_id, assigned_driver_id').eq('id', rideId).single(),
+    supabase.from('ride_requests').select('user_id').eq('ride_id', rideId).eq('status', 'approved')
+  ])
+
+  if (!ride) return
+
+  const participants = new Set()
+  participants.add(ride.creator_id)
+  if (ride.assigned_driver_id) participants.add(ride.assigned_driver_id)
+  if (reqs) reqs.forEach(r => participants.add(r.user_id))
+  
+  participants.delete(senderId) // Don't notify the sender themselves
+
+  if (participants.size === 0) return
+
+  // 2. Fetch users to check if they have the chat open (active_chat_room_id)
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, active_chat_room_id')
+    .in('id', Array.from(participants))
+
+  if (!users) return
+
+  // Only notify users who do NOT have this chat room open
+  const notifyUsers = users.filter(u => u.active_chat_room_id !== rideId).map(u => u.id)
+  if (notifyUsers.length === 0) return
+
+  const preview = messageText.length > 50 ? messageText.substring(0, 47) + '...' : messageText
+
+  const rows = notifyUsers.map(uid => ({
+    user_id: uid,
+    type: NOTIF_TYPES.NEW_MESSAGE,
+    title: `New message from ${senderName}`,
+    message: preview,
+    ride_id: rideId,
+    sender_id: senderId
+  }))
+
+  const { error } = await supabase.from('notifications').insert(rows)
+  if (error) console.error('[notificationService] notifyNewMessage insert error:', error.message)
 }

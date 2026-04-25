@@ -3,12 +3,28 @@ import { supabase } from '../supabaseClient'
 import { MessageCircle } from 'lucide-react'
 import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
+import { useAuth } from '../contexts/AuthContext'
+import { useNotifications } from '../contexts/NotificationContext'
+import { notifyNewMessage } from '../utils/notificationService'
 import '../chat.css'
 
 export default function RideChat({ rideId, currentUserId, driverUserId, canChat, isCompleted }) {
+  const { user } = useAuth()
+  const { markChatRead } = useNotifications()
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const messagesEndRef = useRef(null)
+
+  // Track active chat room
+  useEffect(() => {
+    if (rideId && currentUserId && canChat) {
+      supabase.from('users').update({ active_chat_room_id: rideId }).eq('id', currentUserId).then()
+      markChatRead(rideId)
+      return () => {
+        supabase.from('users').update({ active_chat_room_id: null }).eq('id', currentUserId).then()
+      }
+    }
+  }, [rideId, currentUserId, canChat])
 
   useEffect(() => {
     if (!rideId || !canChat) {
@@ -67,7 +83,17 @@ export default function RideChat({ rideId, currentUserId, driverUserId, canChat,
     const { error } = await supabase.from('chat_messages').insert([
       { ride_id: rideId, sender_id: currentUserId, content: text }
     ])
-    if (error) console.error("Error sending message:", error)
+    if (error) {
+      console.error("Error sending message:", error)
+    } else {
+      // Notify other participants
+      await notifyNewMessage({
+        rideId,
+        senderId: currentUserId,
+        senderName: user?.name || 'User',
+        messageText: text
+      })
+    }
   }
 
   let placeholder = "Type a message..."

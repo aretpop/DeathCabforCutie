@@ -25,6 +25,13 @@ export function NotificationProvider({ children }) {
     // Auto-dismiss after 6 s (ride reminders get 8 s)
     const delay = notif.type === 'RIDE_REMINDER' ? 8000 : 5000
     setTimeout(() => dismissToast(toast.id), delay)
+
+    // Bonus: Vibrate on new message (if supported)
+    if (notif.type === 'NEW_MESSAGE' && typeof window !== 'undefined' && window.navigator?.vibrate) {
+      try {
+        window.navigator.vibrate([100, 50, 100])
+      } catch(e) { /* ignore */ }
+    }
   }
 
   const dismissToast = (toastId) => {
@@ -60,6 +67,28 @@ export function NotificationProvider({ children }) {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
     setUnreadCount(0)
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id)
+  }
+
+  // ── Chat-specific helpers ─────────────────────────────────
+  const getUnreadChatCount = (rideId) => {
+    return notifications.filter(n => n.type === 'NEW_MESSAGE' && n.ride_id === rideId && !n.is_read).length
+  }
+
+  const markChatRead = async (rideId) => {
+    if (!user?.id) return
+    const unread = notifications.filter(n => n.type === 'NEW_MESSAGE' && n.ride_id === rideId && !n.is_read)
+    if (unread.length === 0) return
+
+    setNotifications(prev => prev.map(n => 
+      (n.type === 'NEW_MESSAGE' && n.ride_id === rideId) ? { ...n, is_read: true } : n
+    ))
+    setUnreadCount(prev => Math.max(0, prev - unread.length))
+
+    await supabase.from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id)
+      .eq('ride_id', rideId)
+      .eq('type', 'NEW_MESSAGE')
   }
 
   // ── Delete single notification ────────────────────────────
@@ -166,6 +195,8 @@ export function NotificationProvider({ children }) {
       markAllRead,
       deleteNotification,
       dismissToast,
+      getUnreadChatCount,
+      markChatRead,
       refetch: () => user?.id && fetchNotifications(user.id),
     }}>
       {children}

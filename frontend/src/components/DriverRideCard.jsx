@@ -5,6 +5,7 @@ import { navigateToPickup, navigateRide } from '../utils/geoUtils'
 import { supabase } from '../supabaseClient'
 import { PRIORITY_CONFIG } from '../utils/priorityEngine'
 import { formatRideDateTime } from '../utils/dateUtils'
+import { useNotifications } from '../contexts/NotificationContext'
 
 const STATUS_COLORS = {
   pending_driver: '#f59e0b',
@@ -26,6 +27,9 @@ export default function DriverRideCard({ ride, onUpdate }) {
   const [hasReachedPickup, setHasReachedPickup] = useState(ride.status === 'active')
   const [completing, setCompleting] = useState(false)
   const isAccepted = ['published', 'active'].includes(ride.status)
+  
+  const { getUnreadChatCount } = useNotifications()
+  const unreadCount = getUnreadChatCount(ride.id)
 
   // ── Mark ride as completed (driver side) ───────────────────────────────────
   // Mirrors the creator-side handleCompleteRide in RideDetails.jsx:
@@ -287,7 +291,19 @@ export default function DriverRideCard({ ride, onUpdate }) {
             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)' }}
           >
-            <MessageCircle size={18} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <MessageCircle size={18} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: '-4px', right: '-6px',
+                  background: '#ef4444', color: 'white',
+                  borderRadius: '999px', fontSize: '0.6rem', fontWeight: 'bold',
+                  padding: '2px 5px', border: '1px solid var(--bg-card)'
+                }}>
+                  {unreadCount}
+                </span>
+              )}
+            </div>
             Chat with Riders
           </button>
 

@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
+import { useNotifications } from '../contexts/NotificationContext'
 import { MapPin, Clock, IndianRupee, Users } from 'lucide-react'
 
 export default function RideHistory() {
   const { user } = useAuth()
+  const { getUnreadChatCount } = useNotifications()
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -130,9 +132,24 @@ export default function RideHistory() {
                   )}
                 </div>
 
-                <Link to={`/ride/${ride.id}`} className="btn btn-secondary" style={{ marginTop: '0.5rem', textAlign: 'center', padding: '0.5rem' }}>
-                  View Details
-                </Link>
+                {(() => {
+                  const unreadCount = getUnreadChatCount(ride.id);
+                  return (
+                    <Link to={`/ride/${ride.id}`} className="btn btn-secondary" style={{ marginTop: '0.5rem', textAlign: 'center', padding: '0.5rem', position: 'relative' }}>
+                      View Details
+                      {unreadCount > 0 && (
+                        <span style={{
+                          position: 'absolute', top: '-6px', right: '-6px',
+                          background: '#ef4444', color: 'white',
+                          borderRadius: '999px', fontSize: '0.65rem', fontWeight: 'bold',
+                          padding: '2px 6px', border: '2px solid var(--bg-card)'
+                        }}>
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })()}
               </div>
             )
           })}

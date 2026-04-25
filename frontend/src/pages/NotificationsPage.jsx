@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Bell, CheckCircle, XCircle, Car, UserPlus, Check, Trash2, Clock, Zap } from 'lucide-react'
+import { Bell, CheckCircle, XCircle, Car, UserPlus, Check, Trash2, Clock, Zap, MessageCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '../contexts/NotificationContext'
 import { NOTIF_TYPES } from '../utils/notificationService'
@@ -50,6 +50,7 @@ const TYPE_META = {
   [NOTIF_TYPES.DRIVER_ASSIGNED]: { Icon: Car,          color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',   emoji: '🚗', label: 'Driver'         },
   [NOTIF_TYPES.NEW_RIDE]:        { Icon: Car,          color: '#10b981', bg: 'rgba(16,185,129,0.15)',   emoji: '🚕', label: 'New Ride'       },
   [NOTIF_TYPES.RIDE_REMINDER]:   { Icon: Clock,        color: '#f97316', bg: 'rgba(249,115,22,0.2)',    emoji: '⏰', label: 'Reminder', urgent: true },
+  [NOTIF_TYPES.NEW_MESSAGE]:     { Icon: MessageCircle,color: '#3b82f6', bg: 'rgba(59,130,246,0.15)',   emoji: '💬', label: 'Message'        },
 }
 
 // Filter categories shown in the tab bar
@@ -58,7 +59,7 @@ const FILTER_TABS = [
   { id: 'unread',   label: 'Unread' },
   { id: 'rides',    label: '🚕 Rides',    types: [NOTIF_TYPES.NEW_RIDE, NOTIF_TYPES.DRIVER_ASSIGNED, NOTIF_TYPES.JOIN_ACCEPTED, NOTIF_TYPES.JOIN_REJECTED, NOTIF_TYPES.JOIN_CONFIRMED] },
   { id: 'reminders',label: '⏰ Reminders', types: [NOTIF_TYPES.RIDE_REMINDER] },
-  { id: 'alerts',   label: '🔔 Alerts',   types: [NOTIF_TYPES.JOIN_REQUEST] },
+  { id: 'alerts',   label: '🔔 Alerts',   types: [NOTIF_TYPES.JOIN_REQUEST, NOTIF_TYPES.NEW_MESSAGE] },
 ]
 
 // ── Single notification row ───────────────────────────────────
