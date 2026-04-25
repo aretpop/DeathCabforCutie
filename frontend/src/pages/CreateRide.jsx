@@ -38,6 +38,15 @@ export default function CreateRide() {
   const [loading, setLoading] = useState(false);
   const [priceRange, setPriceRange] = useState(null);
 
+  // ── Responsive: show quick preset chips only on desktop (≥768 px) ──────────
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Sync Input fields when objects change (e.g. from map click)
   useEffect(() => {
     if (pickup) setPickupNameInput(pickup.name || '');
@@ -471,74 +480,76 @@ export default function CreateRide() {
             </button>
           </div>
 
-          {/* ── Quick-pick preset chips ───────────────────────────────────── */}
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border)',
-            borderRadius: '12px',
-            padding: '0.6rem 0.75rem',
-          }}>
+          {/* ── Quick-pick preset chips — desktop only (≥768 px) ─────────────── */}
+          {isDesktop && (
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              marginBottom: '0.5rem',
-              color: 'var(--text-muted)',
-              fontSize: '0.75rem',
-              fontWeight: '600',
-              letterSpacing: '0.05em',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
+              padding: '0.6rem 0.75rem',
             }}>
-              <Zap size={12} />
-              QUICK LOCATIONS — sets {activeSelect === 'pickup' ? 'PICKUP' : 'DESTINATION'}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                marginBottom: '0.5rem',
+                color: 'var(--text-muted)',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                letterSpacing: '0.05em',
+              }}>
+                <Zap size={12} />
+                QUICK LOCATIONS — sets {activeSelect === 'pickup' ? 'PICKUP' : 'DESTINATION'}
+              </div>
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.4rem',
+              }}>
+                {PRESET_LOCATIONS.map((loc) => {
+                  const isPickupActive = activeSelect === 'pickup'      && pickup?.name      === loc.name;
+                  const isDestActive   = activeSelect === 'destination' && destination?.name === loc.name;
+                  const isActive       = isPickupActive || isDestActive;
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => {
+                        if (activeSelect === 'pickup') {
+                          setPickup(loc);
+                          setPickupNameInput(loc.name);
+                          setActiveSelect('destination');
+                        } else {
+                          setDestination(loc);
+                          setDestNameInput(loc.name);
+                        }
+                      }}
+                      style={{
+                        padding: '0.3rem 0.7rem',
+                        borderRadius: '999px',
+                        fontSize: '0.78rem',
+                        fontWeight: isActive ? '600' : '400',
+                        cursor: 'pointer',
+                        border: isActive
+                          ? `1.5px solid ${activeSelect === 'pickup' ? '#22c55e' : 'var(--primary)'}`
+                          : '1.5px solid var(--border)',
+                        background: isActive
+                          ? activeSelect === 'pickup'
+                            ? 'rgba(34,197,94,0.12)'
+                            : 'rgba(99,102,241,0.12)'
+                          : 'var(--bg-subtle)',
+                        color: isActive ? (activeSelect === 'pickup' ? '#22c55e' : 'var(--primary)') : 'var(--text-muted)',
+                        transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {loc.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '0.4rem',
-            }}>
-              {PRESET_LOCATIONS.map((loc) => {
-                const isPickupActive   = activeSelect === 'pickup'   && pickup?.name   === loc.name;
-                const isDestActive     = activeSelect === 'destination' && destination?.name === loc.name;
-                const isActive         = isPickupActive || isDestActive;
-                return (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => {
-                      if (activeSelect === 'pickup') {
-                        setPickup(loc);
-                        setPickupNameInput(loc.name);
-                        setActiveSelect('destination');
-                      } else {
-                        setDestination(loc);
-                        setDestNameInput(loc.name);
-                      }
-                    }}
-                    style={{
-                      padding: '0.3rem 0.7rem',
-                      borderRadius: '999px',
-                      fontSize: '0.78rem',
-                      fontWeight: isActive ? '600' : '400',
-                      cursor: 'pointer',
-                      border: isActive
-                        ? `1.5px solid ${activeSelect === 'pickup' ? '#22c55e' : 'var(--primary)'}`
-                        : '1.5px solid var(--border)',
-                      background: isActive
-                        ? activeSelect === 'pickup'
-                          ? 'rgba(34,197,94,0.12)'
-                          : 'rgba(99,102,241,0.12)'
-                        : 'var(--bg-subtle)',
-                      color: isActive ? (activeSelect === 'pickup' ? '#22c55e' : 'var(--primary)') : 'var(--text-muted)',
-                      transition: 'all 0.15s ease',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {loc.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
           <MapSelector 
             pickup={pickup} 
