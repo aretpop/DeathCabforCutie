@@ -81,10 +81,16 @@ export default function DriverLogin() {
         .maybeSingle()
 
       if (profile) {
-        // Sync vehicle_type from registered_vehicles in case admin changed it
+        // Sync name, vehicle_number, and vehicle_type from registered_vehicles
+        // in case the admin deleted & re-added the driver with a different name,
+        // or changed any vehicle details.
         await supabase
           .from('drivers')
-          .update({ vehicle_type: vehicleType })
+          .update({
+            name: name.trim(),
+            vehicle_number: vehicleNumber.trim().toUpperCase(),
+            vehicle_type: vehicleType,
+          })
           .eq('id', data.user.id)
         navigate('/driver-dashboard')
       } else {
