@@ -494,7 +494,7 @@ export default function RideDetails() {
               <div className="flex flex-row gap-3 mt-4">
                 {isLiveRide && (
                   <button 
-                    className="w-1/2 py-3 px-4 rounded-xl bg-green-500 text-white font-semibold whitespace-nowrap text-center" 
+                    className="w-1/2 py-3 px-4 rounded-xl bg-green-500 text-white font-bold text-lg whitespace-nowrap text-center" 
                     onClick={handleCompleteRide}
                   >
                     Mark Complete
@@ -505,7 +505,7 @@ export default function RideDetails() {
                   currentUserId={user.id} 
                   driverId={ride.driver_id}
                   onCancelled={() => { setRide({...ride, status: 'cancelled'}) }} 
-                  className={isLiveRide ? "w-1/2 py-3 px-4 rounded-xl bg-red-500 text-white font-semibold whitespace-nowrap text-center" : "w-full py-3 px-4 rounded-xl bg-red-500 text-white font-semibold whitespace-nowrap text-center"}
+                  className={isLiveRide ? "w-1/2 py-3 px-4 rounded-xl bg-red-500 text-white font-bold text-lg whitespace-nowrap text-center" : "w-full py-3 px-4 rounded-xl bg-red-500 text-white font-bold text-lg whitespace-nowrap text-center"}
                 />
               </div>
             )}
