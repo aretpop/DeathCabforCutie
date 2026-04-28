@@ -166,6 +166,27 @@ const LOCATIONS = [
     radius: 150,
   },
   {
+    id: "library",
+    name: "Library",
+    latitude: 30.967002,
+    longitude: 76.473234,
+    radius: 150,
+  },
+  {
+    id: "canteen",
+    name: "Canteen",
+    latitude: 30.966471,
+    longitude: 76.471306,
+    radius: 150,
+  },
+  {
+    id: "mess",
+    name: "Mess",
+    latitude: 30.966471,
+    longitude: 76.471306,
+    radius: 150,
+  },
+  {
     id: "shagun_dhaba",
     name: "Shagun Dhaba",
     latitude: 30.955608,
