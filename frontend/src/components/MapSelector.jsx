@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { reverseGeocode, getRoute } from '../utils/geoUtils';
-import { MAP_DEFAULTS } from '../config/locations';
+import { getSmartLocation, getRoute } from '../utils/geoUtils';
+import { MAP_DEFAULTS, PRESET_LOCATIONS } from '../config/locations';
 import 'leaflet/dist/leaflet.css';
 
 // Fix leaf icon issues
@@ -101,23 +101,23 @@ export default function MapSelector({
   const [routeGeometry, setRouteGeometry] = useState(null);
   const routeDebounceRef = useRef(null);
 
-  // Handle map click
+  // Handle map click — uses getSmartLocation so preset radius matching works
   const handleMapClick = async (lat, lng, type) => {
     try {
-      const geoResult = await reverseGeocode(lat, lng);
-      onLocationChange(type, geoResult);
+      const resolved = await getSmartLocation(lat, lng, PRESET_LOCATIONS);
+      onLocationChange(type, { lat, lng, name: resolved.name });
     } catch (err) {
       // Silent error for map clicks
       onLocationChange(type, { lat, lng, name: 'Dropped Pin' });
     }
   };
 
-  // Handle marker drag
+  // Handle marker drag — uses getSmartLocation so preset radius matching works
   const handleMarkerDragEnd = async (e, type) => {
     const { lat, lng } = e.target.getLatLng();
     try {
-      const geoResult = await reverseGeocode(lat, lng);
-      onLocationChange(type, geoResult);
+      const resolved = await getSmartLocation(lat, lng, PRESET_LOCATIONS);
+      onLocationChange(type, { lat, lng, name: resolved.name });
     } catch (err) {
       onLocationChange(type, { lat, lng, name: 'Dropped Pin' });
     }
