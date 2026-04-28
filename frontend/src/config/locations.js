@@ -182,8 +182,8 @@ const LOCATIONS = [
   {
     id: "mess",
     name: "Mess",
-    latitude: 30.966471,
-    longitude: 76.471306,
+    latitude: 30.967078,
+    longitude: 76.467842,
     radius: 150,
   },
   {
@@ -194,8 +194,8 @@ const LOCATIONS = [
     radius: 250,
   },
   {
-    id: "t6_hostel",
-    name: "T-6 Hostel",
+    id: "audi",
+    name: "Auditorium",
     latitude: 30.967412,
     longitude: 76.473382,
     radius: 150,
